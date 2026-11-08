@@ -155,20 +155,25 @@ function renderSettings(el) {
           </div>
           <p class="hint">${st.last ? `${fmt.dayShort.format(new Date(st.last))} · ${fmt.time.format(new Date(st.last))}` : ''}${st.error ? ` <span class="danger-text">${esc(st.error)}</span>` : ''}</p>`
         : `
-          <label class="field"><span>Identifiant d’application (client ID)</span>
-            <input type="text" data-clientid value="${esc(ms.clientId())}" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false" autocomplete="off"></label>
+          <label class="field"><span>Votre adresse e-mail Office 365</span>
+            <input type="email" data-msemail value="${esc(ms.lastEmail())}" placeholder="prenom.nom@entreprise.fr" autocomplete="email" inputmode="email"></label>
           <div class="row wrap gap">
-            <button class="btn primary" data-act="login" ${window.msal ? '' : 'disabled'}>Se connecter</button>
+            <button class="btn primary" data-act="login" ${window.msal && ms.hasClientId() ? '' : 'disabled'}>Se connecter avec Microsoft</button>
           </div>
+          <p class="hint">Chaque salarié se connecte avec sa propre adresse : ses tâches vont dans son agenda Outlook et dans sa liste « Plannings » de To Do.</p>
+          ${!ms.hasClientId() ? `<p class="warn-text">${icon('alert', 15)} L’application doit d’abord être inscrite une fois par l’administrateur Microsoft 365 de l’entreprise.</p>` : ''}
           ${st.error ? `<p class="danger-text">${esc(st.error)}</p>` : ''}
-          <details class="howto"><summary>${icon('info', 16)} Obtenir l’identifiant</summary>
+          <details class="howto"><summary>${icon('info', 16)} Administrateur : inscription de l’application (une seule fois)</summary>
             <ol>
-              <li><b>portal.azure.com</b> → Microsoft Entra ID → Inscriptions d’applications → Nouvelle.</li>
-              <li>Comptes : <b>organisationnels et personnels</b>.</li>
+              <li><b>entra.microsoft.com</b> → Applications → Inscriptions d’applications → Nouvelle inscription, nom <i>Plannings</i>.</li>
+              <li>Comptes : <b>cet annuaire uniquement</b> (salariés de l’entreprise) ou <b>organisationnels et personnels</b>.</li>
               <li>Plateforme <b>Application monopage (SPA)</b>, deux URI de redirection : <code class="copy" data-copy="https://aventumgroupe.github.io/plannings/">https://aventumgroupe.github.io/plannings/</code> et <code class="copy" data-copy="https://localhost/">https://localhost/</code> (application Android).</li>
-              <li>Autorisations de l’API Microsoft Graph (déléguées) : <code>Calendars.ReadWrite</code> <code>Tasks.ReadWrite</code> <code>User.Read</code>, puis « Accorder un consentement d’administrateur ».</li>
-              <li>Copier l’ID d’application ici.</li>
-            </ol></details>`}
+              <li>Autorisations Microsoft Graph (déléguées) : <code>Calendars.ReadWrite</code> <code>Tasks.ReadWrite</code> <code>User.Read</code>, puis « Accorder un consentement d’administrateur ».</li>
+              <li>Transmettre l’<b>ID d’application (client)</b> pour qu’il soit intégré à l’application, ou le coller ci-dessous en attendant.</li>
+            </ol>
+            <label class="field"><span>ID d’application (client)</span>
+              <input type="text" data-clientid value="${esc(local.get('msClientId', ''))}" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false" autocomplete="off"></label>
+          </details>`}
         <hr>
         <div class="row wrap gap">
           <button class="icon-btn" data-act="export" title="Exporter une sauvegarde (.json)" aria-label="Exporter">${icon('download', 18)}</button>
@@ -224,7 +229,7 @@ function renderSettings(el) {
       render(); return;
     }
     if (e.target.matches('[data-cal]')) { ms.setCalendarId(e.target.value); toast('Calendrier choisi. Synchronisation…'); manualSync(); }
-    if (e.target.matches('[data-clientid]')) ms.setClientId(e.target.value);
+    if (e.target.matches('[data-clientid]')) { const v = e.target.value.trim(); if (v && !/^[0-9a-f-]{36}$/i.test(v)) { toast('Format attendu : 00000000-0000-0000-0000-000000000000.'); return; } ms.setClientId(v); render(); }
     if (e.target.matches('[data-import]')) {
       const f = e.target.files[0];
       if (!f) return;
@@ -251,10 +256,9 @@ function renderSettings(el) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
     if (act === 'login') {
-      const v = root.querySelector('[data-clientid]').value.trim();
-      if (!/^[0-9a-f-]{36}$/i.test(v)) { toast('L’identifiant doit ressembler à 00000000-0000-0000-0000-000000000000.'); return; }
-      ms.setClientId(v);
-      try { await ms.initMs(); await ms.login(); } catch (err) { toast(err.message, { tone: 'danger' }); }
+      const email = root.querySelector('[data-msemail]').value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('Saisissez votre adresse e-mail Office 365.'); return; }
+      try { await ms.initMs(); await ms.login(email); } catch (err) { toast(err.message, { tone: 'danger' }); }
     }
     if (act === 'logout') ms.logout();
     if (act === 'sync') manualSync();

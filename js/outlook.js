@@ -33,7 +33,12 @@ export const onStatus = (f) => { listeners.add(f); return () => listeners.delete
 export const getStatus = () => ({ ...status });
 function setStatus(p) { Object.assign(status, p); listeners.forEach((f) => f(getStatus())); }
 
-export const clientId = () => local.get('msClientId', '');
+// Identifiant de l'application inscrite une fois par l'administrateur Microsoft 365 de l'entreprise.
+// Une fois renseigné ici, chaque salarié n'a qu'à se connecter avec son adresse Office 365.
+export const BUILTIN_CLIENT_ID = '';
+export const clientId = () => local.get('msClientId', '') || BUILTIN_CLIENT_ID;
+export const hasClientId = () => !!clientId();
+export const lastEmail = () => local.get('msEmail', '');
 export const setClientId = (v) => local.set('msClientId', (v || '').trim());
 export const calendarId = () => local.get('msCalendarId', '');
 export const setCalendarId = (v) => local.set('msCalendarId', v || '');
@@ -43,6 +48,16 @@ export const accountLabel = () => account ? (account.name ? `${account.name} (${
 
 class GraphError extends Error {
   constructor(status, msg) { super(msg); this.status = status; }
+}
+
+// L'annuaire de l'entreprise est déduit du domaine de l'adresse (fonctionne aussi si l'application
+// n'est inscrite que pour l'annuaire de l'entreprise).
+const PERSONAL = /@(outlook|hotmail|live|msn)\.[a-z.]+$/i;
+function authority() {
+  const email = lastEmail();
+  if (!email) return 'https://login.microsoftonline.com/organizations';
+  if (PERSONAL.test(email)) return 'https://login.microsoftonline.com/consumers';
+  return `https://login.microsoftonline.com/${email.split('@')[1].toLowerCase()}`;
 }
 
 // Banc d'essai : window.__GP_TEST__ = { token, account } remplace la connexion MSAL.
@@ -55,7 +70,7 @@ export async function initMs() {
   if (!id || !window.msal) { setStatus({ state: 'off' }); return false; }
   try {
     pca = new window.msal.PublicClientApplication({
-      auth: { clientId: id, authority: 'https://login.microsoftonline.com/common', redirectUri: redirectUri(), navigateToLoginRequestUrl: false },
+      auth: { clientId: id, authority: authority(), redirectUri: redirectUri(), navigateToLoginRequestUrl: false },
       cache: { cacheLocation: 'localStorage' },
     });
     await pca.initialize();
@@ -71,10 +86,12 @@ export async function initMs() {
   }
 }
 
-export async function login() {
+/** Connexion avec l'adresse Office 365 du salarié (page de connexion Microsoft pré-remplie). */
+export async function login(email = '') {
+  if (email && email !== lastEmail()) { local.set('msEmail', email); pca = null; } // annuaire propre à l'adresse
   if (!pca) await initMs();
-  if (!pca) throw new Error('Renseignez d’abord l’identifiant d’application (client ID).');
-  await pca.loginRedirect({ scopes: SCOPES, prompt: 'select_account' });
+  if (!pca) throw new Error('L’application n’est pas encore inscrite chez Microsoft : voir avec l’administrateur.');
+  await pca.loginRedirect({ scopes: SCOPES, ...(email ? { loginHint: email } : { prompt: 'select_account' }) });
 }
 
 export async function logout() {
