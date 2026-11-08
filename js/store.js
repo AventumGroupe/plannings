@@ -51,7 +51,7 @@ function normalizeTask(t) {
     title: '', notes: '', urgency: 3, importance: 3, energy: 3, status: 'todo',
     projectId: null, start: null, end: null, allDay: false, estimate: 60, due: null,
     subtasks: [], preds: [], assign: [], delegate: null, recur: null, reminder: null,
-    outlook: null, createdAt: Date.now(), updatedAt: Date.now(), doneAt: null, slips: 0,
+    outlook: null, todo: null, createdAt: Date.now(), updatedAt: Date.now(), doneAt: null, slips: 0,
     ...t,
   };
 }
@@ -123,7 +123,7 @@ export function category(t) {
 }
 
 /** Date de dernière modification, y compris les métadonnées Outlook (pour la fusion). */
-export const modAt = (x) => Math.max(x.updatedAt || 0, x.outlook?.syncedAt || 0);
+export const modAt = (x) => Math.max(x.updatedAt || 0, x.outlook?.syncedAt || 0, x.todo?.syncedAt || 0);
 
 // ---------- Écriture ----------
 export function newTask(p = {}) {
@@ -140,7 +140,7 @@ export function removeTask(id) {
   const t = db.tasks[id];
   if (!t) return;
   delete db.tasks[id];
-  db.deleted[id] = { at: Date.now(), kind: 'task', outlookId: t.outlook?.id || null };
+  db.deleted[id] = { at: Date.now(), kind: 'task', outlookId: t.outlook?.id || null, todoId: t.todo?.id || null };
   for (const o of tasks()) {
     if (o.preds.some((p) => p.id === id)) { o.preds = o.preds.filter((p) => p.id !== id); o.updatedAt = Date.now(); }
   }

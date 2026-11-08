@@ -1,15 +1,23 @@
-// Connexion Microsoft (MSAL) :
-//  - synchronisation Outlook dans les deux sens (Microsoft Graph, calendrier) ;
-//  - synchronisation entre appareils via un fichier dans le dossier d'application OneDrive.
+// Connexion Microsoft 365 / Exchange (MSAL + Microsoft Graph).
+// Toutes les données passent par votre boîte Exchange :
+//  - tâches avec une heure précise  -> rendez-vous dans l'agenda Outlook ;
+//  - autres tâches                   -> liste « Plannings » de Microsoft To Do (Tâches Outlook) ;
+//  - projets, ressources, réglages   -> données invisibles attachées à cette liste.
+// Chaque élément Exchange porte la fiche complète de la tâche (critères, liens, ressources…),
+// ce qui permet au téléphone et à l'ordinateur de partager exactement les mêmes données.
+// Les modifications faites directement dans Outlook ou To Do (titre, date, statut) sont reprises.
 
-import { db, tasks, putTask, save, local, mergeRemote, ENERGY } from './store.js';
-import { tEnd, propagate } from './sched.js';
+import { db, tasks, newTask, putTask, save, local, mergeRemote, ENERGY } from './store.js';
+import { tEnd, propagate, completeTask } from './sched.js';
 import { toLocal, toDateStr, parse, addDays, startOfDay } from './util.js';
 
-const SCOPES = ['User.Read', 'Calendars.ReadWrite', 'Files.ReadWrite.AppFolder'];
+const SCOPES = ['User.Read', 'Calendars.ReadWrite', 'Tasks.ReadWrite'];
 const PROP = 'String {7d3f1b2a-4c6e-4f8a-9b1d-5e2c3a4b6d8f} Name gpTaskId';
+const PROP_DATA = 'String {7d3f1b2a-4c6e-4f8a-9b1d-5e2c3a4b6d8f} Name gpTaskData';
+const EXT_TASK = 'com.aventum.plannings.task';
+const EXT_META = 'com.aventum.plannings.meta';
+const LIST_NAME = 'Plannings';
 const CATEGORY = 'Gestion des plannings';
-const FILE = 'gestion-plannings.json';
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const PAST_DAYS = 30, FUTURE_DAYS = 365;
@@ -37,8 +45,12 @@ class GraphError extends Error {
   constructor(status, msg) { super(msg); this.status = status; }
 }
 
+// Banc d'essai : window.__GP_TEST__ = { token, account } remplace la connexion MSAL.
+const testHook = () => window.__GP_TEST__ || null;
+
 // ---------- Authentification ----------
 export async function initMs() {
+  if (testHook()) { account = testHook().account || { username: 'test@exemple.fr' }; setStatus({ state: 'idle' }); return true; }
   const id = clientId();
   if (!id || !window.msal) { setStatus({ state: 'off' }); return false; }
   try {
@@ -74,6 +86,7 @@ export async function logout() {
 }
 
 async function token() {
+  if (testHook()) return testHook().token;
   try {
     const r = await pca.acquireTokenSilent({ scopes: SCOPES, account });
     return r.accessToken;
@@ -85,11 +98,11 @@ async function token() {
   }
 }
 
-async function graph(path, { method = 'GET', body, headers = {}, raw = false } = {}) {
+async function graph(path, { method = 'GET', body, headers = {} } = {}) {
   const url = path.startsWith('http') ? path : GRAPH + path;
   const h = { Authorization: `Bearer ${await token()}`, ...headers };
-  if (body !== undefined && !raw) h['Content-Type'] = 'application/json';
-  const res = await fetch(url, { method, headers: h, body: body === undefined ? undefined : raw ? body : JSON.stringify(body) });
+  if (body !== undefined) h['Content-Type'] = 'application/json';
+  const res = await fetch(url, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
   if (!res.ok) {
     let msg = res.statusText;
     try { const j = await res.json(); msg = j.error?.message || msg; } catch {}
@@ -99,10 +112,22 @@ async function graph(path, { method = 'GET', body, headers = {}, raw = false } =
   const ct = res.headers.get('content-type') || '';
   return ct.includes('json') ? res.json() : res.text();
 }
+const ignore404 = (p) => p.catch((e) => { if (e.status !== 404) throw e; return null; });
+
+async function pages(url, headers) {
+  const out = [];
+  let guard = 0;
+  while (url && guard++ < 50) {
+    const r = await graph(url, { headers });
+    out.push(...(r.value || []));
+    url = r['@odata.nextLink'] || null;
+  }
+  return out;
+}
 
 function messageOf(e) {
   if (!e) return '';
-  if (e.status === 401 || e.status === 403) return 'Accès refusé par Microsoft : vérifiez les autorisations de l’application.';
+  if (e.status === 401 || e.status === 403) return 'Accès refusé par Microsoft : vérifiez les autorisations de l’application (Calendars.ReadWrite, Tasks.ReadWrite).';
   if (e.errorCode === 'user_cancelled') return 'Connexion annulée.';
   if (!navigator.onLine) return 'Hors connexion : la synchronisation reprendra automatiquement.';
   return e.message || String(e);
@@ -113,28 +138,59 @@ export async function listCalendars() {
   return (r.value || []).filter((c) => c.canEdit);
 }
 
+// ---------- Règle de répartition ----------
+/** Une tâche avec une heure précise va dans l'agenda ; les autres vont dans To Do. */
+const inAgenda = (t) => !!t.start && !t.allDay;
+
+/** Fiche transportée dans Exchange (sans les identifiants propres à chaque élément). */
+const packTask = (t) => JSON.stringify({ ...t });
+
 // ---------- Synchronisation globale ----------
-/** Fusion OneDrive -> calendrier Outlook -> envoi OneDrive. */
 export function syncAll({ manual = false } = {}) {
   if (!account) return Promise.resolve(false);
   if (!navigator.onLine) { setStatus({ state: 'offline', error: null }); return Promise.resolve(false); }
   if (running) return running;
   running = (async () => {
-    setStatus({ state: 'syncing', error: null, detail: 'Appareils…' });
+    setStatus({ state: 'syncing', error: null, detail: 'Exchange…' });
     try {
-      const cloud = await pullCloud();
-      setStatus({ detail: 'Outlook…' });
-      const cal = await syncCalendar();
-      setStatus({ detail: 'Enregistrement…' });
-      await pushCloud(cloud.eTag);
-      const now = Date.now();
-      local.set('lastSync', now);
-      setStatus({ state: 'idle', last: now, detail: '', lastResult: cal });
-      return cal;
+      const stats = { pulled: 0, pushed: 0, removed: 0 };
+      const listId = await ensureList();
+      const now = new Date();
+      const from = addDays(startOfDay(now), -PAST_DAYS);
+      const to = addDays(startOfDay(now), FUTURE_DAYS);
+
+      // 1. Lecture : données générales, tâches To Do, rendez-vous
+      const [meta, todos, events] = await Promise.all([readMeta(listId), readTodos(listId), readEvents(from, to)]);
+
+      // 2. Fusion (pour chaque élément, la version la plus récente gagne)
+      const remote = { tasks: {}, projects: meta?.projects || {}, resources: meta?.resources || {}, deleted: meta?.deleted || {}, settings: meta?.settings };
+      const keep = (obj) => { if (obj?.id && (!remote.tasks[obj.id] || (obj.updatedAt || 0) > (remote.tasks[obj.id].updatedAt || 0))) remote.tasks[obj.id] = obj; };
+      todos.forEach((x) => keep(x.data));
+      events.ours.forEach((x) => keep(x.data));
+      if (mergeRemote(remote)) stats.pulled++;
+
+      // 3. Modifications faites directement dans To Do / Outlook
+      setStatus({ detail: 'To Do…' });
+      stats.pulled += applyTodoEdits(todos, listId);
+      setStatus({ detail: 'Agenda…' });
+      stats.pulled += await applyEventEdits(events.ours);
+      local.set('outlookEvents', events.external);
+
+      // 4. Envoi
+      stats.pushed += await pushEvents(from, stats);
+      stats.pushed += await pushTodos(listId, stats);
+      await pushDeleted(stats);
+      await writeMeta(listId, meta);
+
+      save('sync');
+      const t = Date.now();
+      local.set('lastSync', t);
+      setStatus({ state: 'idle', last: t, detail: '', lastResult: stats });
+      return stats;
     } catch (e) {
       console.error(e);
       setStatus({ state: 'error', error: messageOf(e), detail: '' });
-      if (manual) throw e;
+      if (manual) throw new Error(messageOf(e));
       return false;
     } finally {
       running = null;
@@ -143,186 +199,302 @@ export function syncAll({ manual = false } = {}) {
   return running;
 }
 
-// ---------- OneDrive (entre appareils) ----------
-const itemPath = `/me/drive/special/approot:/${encodeURIComponent(FILE)}`;
-
-async function pullCloud() {
-  let meta;
-  try { meta = await graph(`${itemPath}?$select=id,eTag,@microsoft.graph.downloadUrl`); }
-  catch (e) { if (e.status === 404) return { eTag: null }; throw e; }
-  const url = meta['@microsoft.graph.downloadUrl'];
-  if (url) {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (res.ok) {
-      const remote = await res.json().catch(() => null);
-      if (remote) mergeRemote(remote);
-    }
+// ---------- Liste To Do « Plannings » ----------
+async function ensureList() {
+  const cached = local.get('todoListId');
+  if (cached) {
+    const ok = await ignore404(graph(`/me/todo/lists/${cached}?$select=id`));
+    if (ok) return cached;
   }
-  return { eTag: meta.eTag };
+  const lists = await pages('/me/todo/lists?$select=id,displayName');
+  let list = lists.find((l) => l.displayName === LIST_NAME);
+  if (!list) list = await graph('/me/todo/lists', { method: 'POST', body: { displayName: LIST_NAME } });
+  local.set('todoListId', list.id);
+  return list.id;
 }
 
-async function pushCloud(eTag, retry = true) {
+const findExt = (exts, name) => (exts || []).find((e) => e.extensionName === name || String(e.id || '').endsWith(name));
+
+async function readMeta(listId) {
+  const exts = await pages(`/me/todo/lists/${listId}/extensions`).catch(() => []);
+  const ext = findExt(exts, EXT_META);
+  if (!ext?.data) return null;
+  try { return JSON.parse(ext.data); } catch { return null; }
+}
+
+async function writeMeta(listId) {
+  const data = JSON.stringify({ projects: db.projects, resources: db.resources, deleted: db.deleted, settings: db.settings });
+  if (data === local.get('metaPushed')) return;
+  await upsertExt(`/me/todo/lists/${listId}/extensions`, EXT_META, data);
+  local.set('metaPushed', data);
+}
+
+async function upsertExt(base, name, data) {
   try {
-    await graph(`${itemPath}:/content`, {
-      method: 'PUT', raw: true, body: JSON.stringify(db),
-      headers: { 'Content-Type': 'application/json', ...(eTag ? { 'If-Match': eTag } : {}) },
-    });
+    await graph(`${base}/${name}`, { method: 'PATCH', body: { '@odata.type': 'microsoft.graph.openTypeExtension', extensionName: name, data } });
   } catch (e) {
-    if (e.status === 412 && retry) { // modifié entre-temps par un autre appareil
-      const c = await pullCloud();
-      return pushCloud(c.eTag, false);
-    }
-    throw e;
+    if (e.status !== 404) throw e;
+    await graph(base, { method: 'POST', body: { '@odata.type': 'microsoft.graph.openTypeExtension', extensionName: name, data } });
   }
 }
 
-// ---------- Calendrier Outlook (deux sens) ----------
+async function readTodos(listId) {
+  const items = await pages(`/me/todo/lists/${listId}/tasks?$top=100&$expand=extensions`);
+  return items.map((it) => {
+    const ext = findExt(it.extensions, EXT_TASK);
+    let data = null;
+    try { data = ext?.data ? JSON.parse(ext.data) : null; } catch {}
+    return { item: it, data };
+  });
+}
+
+const todoStatus = (t) => (t.status === 'done' ? 'completed' : t.status === 'doing' ? 'inProgress' : 'notStarted');
+const fromTodoStatus = (s) => (s === 'completed' ? 'done' : s === 'inProgress' ? 'doing' : 'todo');
+const todoImportance = (t) => (t.importance >= 4 ? 'high' : t.importance <= 2 ? 'low' : 'normal');
+const todoDue = (t) => t.due || (t.start ? t.start.slice(0, 10) : null);
+
+function todoPayload(t) {
+  const p = db.projects[t.projectId];
+  const due = todoDue(t);
+  const lines = [
+    t.notes || '',
+    `Urgence ${t.urgency}/5 · Importance ${t.importance}/5 · Énergie : ${ENERGY[t.energy].label}`,
+    p ? `Projet : ${p.name}` : '',
+    t.subtasks.length ? t.subtasks.map((s) => `${s.done ? '☑' : '☐'} ${s.title}`).join('\n') : '',
+    '— Gestion des plannings',
+  ].filter(Boolean);
+  const body = {
+    title: t.title,
+    status: todoStatus(t),
+    importance: todoImportance(t),
+    body: { contentType: 'text', content: lines.join('\n') },
+    categories: [CATEGORY],
+    dueDateTime: due ? { dateTime: `${due}T00:00:00`, timeZone: TZ } : null,
+  };
+  if (due && t.reminder != null && t.status !== 'done') {
+    const r = parse(due); r.setHours(db.settings.dayStart, 0, 0, 0);
+    if (t.reminder >= 1440) r.setDate(r.getDate() - 1);
+    body.isReminderOn = true;
+    body.reminderDateTime = { dateTime: `${toLocal(r)}:00`, timeZone: TZ };
+  } else body.isReminderOn = false;
+  return body;
+}
+
+/** Reprend les changements faits dans To Do (titre, statut, échéance) et les tâches créées dans To Do. */
+function applyTodoEdits(todos, listId) {
+  let n = 0;
+  for (const { item, data } of todos) {
+    let t = data ? db.tasks[data.id] : tasks().find((x) => x.todo?.id === item.id);
+    if (!t && data && db.deleted[data.id]) continue;
+    if (!t) {
+      // Tâche ajoutée directement dans To Do / Outlook : on l'importe.
+      if (item.status === 'completed') continue;
+      t = newTask({
+        title: item.title || '(sans titre)',
+        importance: item.importance === 'high' ? 4 : item.importance === 'low' ? 2 : 3,
+        due: item.dueDateTime?.dateTime ? item.dueDateTime.dateTime.slice(0, 10) : null,
+        notes: item.body?.contentType === 'text' ? item.body.content || '' : '',
+      });
+      t.todo = { id: item.id, remoteMod: item.lastModifiedDateTime, syncedAt: 0 };
+      putTask(t, { silent: true });
+      n++;
+      continue;
+    }
+    if (!t.todo || t.todo.id !== item.id) { t.todo = { id: item.id, remoteMod: item.lastModifiedDateTime, syncedAt: t.todo?.syncedAt || 0 }; putTask(t, { silent: true, touch: false }); }
+    if (item.lastModifiedDateTime === t.todo.remoteMod) continue;
+    const remoteNewer = Date.parse(item.lastModifiedDateTime) > (t.updatedAt || 0);
+    const due = item.dueDateTime?.dateTime ? item.dueDateTime.dateTime.slice(0, 10) : null;
+    const st = fromTodoStatus(item.status);
+    const changed = remoteNewer && (item.title !== t.title || st !== t.status || (due || null) !== (todoDue(t) || null));
+    t.todo.remoteMod = item.lastModifiedDateTime;
+    if (!changed) { putTask(t, { silent: true, touch: false }); continue; }
+    if (item.title) t.title = item.title;
+    if (due !== todoDue(t)) t.due = due;
+    if (st === 'done' && t.status !== 'done') completeTask(t);
+    else t.status = st;
+    putTask(t, { silent: true }); // updatedAt > syncedAt : la fiche sera renvoyée
+    n++;
+  }
+  return n;
+}
+
+async function pushTodos(listId, stats) {
+  let n = 0;
+  const base = `/me/todo/lists/${listId}/tasks`;
+  for (const t of tasks()) {
+    const o = t.todo;
+    try {
+      if (inAgenda(t)) {
+        if (o?.id) { await ignore404(graph(`${base}/${o.id}`, { method: 'DELETE' })); t.todo = null; putTask(t, { silent: true, touch: false }); stats.removed++; }
+        continue;
+      }
+      if (!o?.id) {
+        if (t.status === 'done' && t.doneAt && t.doneAt < Date.now() - 30 * 864e5) continue; // anciennes tâches faites
+        const created = await graph(base, { method: 'POST', body: todoPayload(t) });
+        t.todo = { id: created.id, remoteMod: null, syncedAt: 0 };
+        await upsertExt(`${base}/${created.id}/extensions`, EXT_TASK, packTask(t));
+        const fresh = await graph(`${base}/${created.id}?$select=id,lastModifiedDateTime`);
+        t.todo = { id: created.id, remoteMod: fresh.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
+        putTask(t, { silent: true, touch: false });
+        n++;
+      } else if ((t.updatedAt || 0) > (o.syncedAt || 0)) {
+        await upsertExt(`${base}/${o.id}/extensions`, EXT_TASK, packTask(t));
+        const upd = await graph(`${base}/${o.id}`, { method: 'PATCH', body: todoPayload(t) });
+        t.todo = { id: o.id, remoteMod: upd.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
+        putTask(t, { silent: true, touch: false });
+        n++;
+      }
+    } catch (e) {
+      if (e.status === 404 && o?.id) { t.todo = null; putTask(t, { silent: true, touch: false }); continue; } // supprimée dans To Do entre-temps
+      throw e;
+    }
+  }
+  return n;
+}
+
+// ---------- Agenda Outlook (tâches avec heure) ----------
 const calBase = () => (calendarId() ? `/me/calendars/${calendarId()}` : '/me/calendar');
 const SELECT = 'id,subject,start,end,isAllDay,lastModifiedDateTime,showAs,location,isCancelled,webLink,categories';
-const EXPAND = `singleValueExtendedProperties($filter=id eq '${PROP}')`;
+const EXPAND = `singleValueExtendedProperties($filter=id eq '${PROP}' or id eq '${PROP_DATA}')`;
 const PREFER = { Prefer: `outlook.timezone="${TZ}"` };
+const localStr = (dt) => dt.slice(0, 16);
+const prop = (ev, id) => ev.singleValueExtendedProperties?.find((p) => p.id.toLowerCase() === id.toLowerCase())?.value || null;
 
-const localStr = (dt) => dt.slice(0, 16); // "2026-11-09T09:00:00.0000000" -> "2026-11-09T09:00"
-const taskIdOf = (ev) => ev.singleValueExtendedProperties?.find((p) => p.id.toLowerCase() === PROP.toLowerCase())?.value || null;
+async function readEvents(from, to) {
+  const url = `${calBase()}/calendarView?startDateTime=${from.toISOString()}&endDateTime=${to.toISOString()}&$top=250&$select=${SELECT}&$expand=${encodeURIComponent(EXPAND)}`;
+  const list = await pages(url, PREFER);
+  const ours = [], external = [];
+  for (const ev of list) {
+    if (ev.isCancelled) continue;
+    const id = prop(ev, PROP);
+    if (id) {
+      let data = null;
+      try { data = JSON.parse(prop(ev, PROP_DATA) || 'null'); } catch {}
+      ours.push({ ev, id, data });
+    } else {
+      external.push({
+        id: ev.id, subject: ev.subject, start: localStr(ev.start.dateTime), end: localStr(ev.end.dateTime),
+        isAllDay: ev.isAllDay, showAs: ev.showAs, location: ev.location?.displayName || '', webLink: ev.webLink,
+      });
+    }
+  }
+  return { ours, external };
+}
 
-function payload(t) {
+function eventPayload(t) {
   const p = db.projects[t.projectId];
   const end = tEnd(t);
   const lines = [
     t.notes || '',
-    '',
     `Urgence ${t.urgency}/5 · Importance ${t.importance}/5 · Énergie : ${ENERGY[t.energy].label}`,
     p ? `Projet : ${p.name}` : '',
-    t.subtasks.length ? `Sous-tâches :\n${t.subtasks.map((s) => `${s.done ? '☑' : '☐'} ${s.title}`).join('\n')}` : '',
+    t.subtasks.length ? t.subtasks.map((s) => `${s.done ? '☑' : '☐'} ${s.title}`).join('\n') : '',
     '— Gestion des plannings',
-  ].filter((x, i) => x || i === 1);
+  ].filter(Boolean);
   return {
     subject: (t.status === 'done' ? '✓ ' : '') + t.title,
-    body: { contentType: 'text', content: lines.join('\n').trim() },
-    start: { dateTime: t.allDay ? `${t.start.slice(0, 10)}T00:00:00` : `${t.start}:00`, timeZone: TZ },
-    end: { dateTime: t.allDay ? `${toDateStr(end)}T00:00:00` : `${toLocal(end)}:00`, timeZone: TZ },
-    isAllDay: !!t.allDay,
+    body: { contentType: 'text', content: lines.join('\n') },
+    start: { dateTime: `${t.start}:00`, timeZone: TZ },
+    end: { dateTime: `${toLocal(end)}:00`, timeZone: TZ },
+    isAllDay: false,
     isReminderOn: t.reminder != null && t.status !== 'done',
     reminderMinutesBeforeStart: t.reminder ?? 15,
     showAs: t.status === 'done' ? 'free' : 'busy',
     categories: [CATEGORY],
-    singleValueExtendedProperties: [{ id: PROP, value: t.id }],
+    singleValueExtendedProperties: [{ id: PROP, value: t.id }, { id: PROP_DATA, value: packTask(t) }],
   };
 }
 
-function applyRemote(t, ev) {
+function applyRemoteEvent(t, ev) {
   const subj = (ev.subject || '').replace(/^✓\s*/, '').trim();
   if (subj) t.title = subj;
-  t.allDay = !!ev.isAllDay;
   const s = localStr(ev.start.dateTime), e = localStr(ev.end.dateTime);
-  if (t.allDay) {
+  if (ev.isAllDay) {
+    t.allDay = true;
     t.start = `${s.slice(0, 10)}T00:00`;
     const last = addDays(parse(e), -1);
     t.end = `${toDateStr(last < parse(s) ? parse(s) : last)}T00:00`;
   } else {
+    t.allDay = false;
     t.start = s; t.end = e;
     t.estimate = Math.max(15, Math.round((parse(e) - parse(s)) / 60000));
   }
-  const now = Date.now();
-  t.updatedAt = now;
-  t.outlook = { id: ev.id, remoteMod: ev.lastModifiedDateTime, syncedAt: now };
+  t.updatedAt = Date.now();
+  // syncedAt reste ancien : la fiche complète sera réécrite dans l'événement (ou passée dans To Do si journée entière)
+  t.outlook = { id: ev.id, remoteMod: ev.lastModifiedDateTime, syncedAt: t.outlook?.syncedAt || 0 };
   putTask(t, { silent: true, touch: false });
 }
 
-function markSynced(t, ev) {
-  t.outlook = { id: ev.id, remoteMod: ev.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
-  putTask(t, { silent: true, touch: false });
-}
-
-async function fetchView(from, to) {
-  let url = `${calBase()}/calendarView?startDateTime=${from.toISOString()}&endDateTime=${to.toISOString()}&$top=250&$select=${SELECT}&$expand=${encodeURIComponent(EXPAND)}`;
-  const out = [];
-  let guard = 0;
-  while (url && guard++ < 40) {
-    const r = await graph(url, { headers: PREFER });
-    out.push(...(r.value || []));
-    url = r['@odata.nextLink'] || null;
-  }
-  return out;
-}
-
-export async function syncCalendar() {
-  const now = new Date();
-  const from = addDays(startOfDay(now), -PAST_DAYS);
-  const to = addDays(startOfDay(now), FUTURE_DAYS);
-  const events = await fetchView(from, to);
-
-  const ours = new Map();
-  const external = [];
-  for (const ev of events) {
-    if (ev.isCancelled) continue;
-    const id = taskIdOf(ev);
-    if (id) ours.set(id, ev);
-    else external.push({
-      id: ev.id, subject: ev.subject, start: localStr(ev.start.dateTime), end: localStr(ev.end.dateTime),
-      isAllDay: ev.isAllDay, showAs: ev.showAs, location: ev.location?.displayName || '', webLink: ev.webLink,
-    });
-  }
-  local.set('outlookEvents', external);
-
-  const stats = { pulled: 0, pushed: 0, removed: 0 };
+async function applyEventEdits(ours) {
+  let n = 0;
   const applied = [];
-
-  // 1. Réception des modifications faites dans Outlook
+  const seen = new Set();
+  for (const { ev, id, data } of ours) {
+    seen.add(id);
+    let t = db.tasks[id];
+    if (!t) {
+      if (db.deleted[id]) continue;
+      // Événement créé par un autre appareil sans fiche lisible : on recrée la tâche
+      t = newTask(data ? { ...data } : { id, title: ev.subject || '(sans titre)' });
+      t.id = id;
+      putTask(t, { silent: true, touch: false });
+    }
+    if (!t.outlook || t.outlook.id !== ev.id) { t.outlook = { id: ev.id, remoteMod: ev.lastModifiedDateTime, syncedAt: t.outlook?.syncedAt || 0 }; putTask(t, { silent: true, touch: false }); continue; }
+    if (ev.lastModifiedDateTime === t.outlook.remoteMod) continue;
+    const localChanged = (t.updatedAt || 0) > (t.outlook.syncedAt || 0);
+    if (!localChanged || Date.parse(ev.lastModifiedDateTime) > t.updatedAt) {
+      const before = `${t.title}|${t.start}|${t.end}|${t.allDay}`;
+      const subj = (ev.subject || '').replace(/^✓\s*/, '').trim();
+      const after = `${subj || t.title}|${ev.isAllDay ? '' : localStr(ev.start.dateTime)}|${ev.isAllDay ? '' : localStr(ev.end.dateTime)}|${!!ev.isAllDay}`;
+      if (before !== after) { applyRemoteEvent(t, ev); applied.push(t.id); n++; }
+      else { t.outlook.remoteMod = ev.lastModifiedDateTime; putTask(t, { silent: true, touch: false }); }
+    }
+  }
+  // Rendez-vous supprimés dans Outlook
   for (const t of tasks()) {
-    let ev = ours.get(t.id);
-    if (!ev && t.outlook?.id) {
-      try { ev = await graph(`/me/events/${t.outlook.id}?$select=${SELECT}&$expand=${encodeURIComponent(EXPAND)}`, { headers: PREFER }); }
-      catch (e) { if (e.status !== 404) throw e; ev = null; }
-      if (!ev || ev.isCancelled) {
-        // Supprimé dans Outlook
-        const localChanged = t.updatedAt > (t.outlook.syncedAt || 0);
-        if (localChanged && t.start) { t.outlook = null; putTask(t, { silent: true, touch: false }); }
-        else { t.start = null; t.end = null; t.outlook = null; t.updatedAt = Date.now(); putTask(t, { silent: true, touch: false }); stats.removed++; }
-        continue;
-      }
-    }
-    if (!ev) continue;
-    if (!t.outlook || t.outlook.id !== ev.id) t.outlook = { id: ev.id, remoteMod: null, syncedAt: 0 };
-    const remoteChanged = ev.lastModifiedDateTime !== t.outlook.remoteMod;
-    const localChanged = t.updatedAt > (t.outlook.syncedAt || 0);
-    if (remoteChanged && (!localChanged || Date.parse(ev.lastModifiedDateTime) > t.updatedAt)) {
-      if (t.outlook.remoteMod === null && !localChanged) { markSynced(t, ev); continue; }
-      applyRemote(t, ev);
-      applied.push(t.id);
-      stats.pulled++;
-    }
+    if (!t.outlook?.id || seen.has(t.id) || !inAgenda(t)) continue;
+    const ev = await ignore404(graph(`/me/events/${t.outlook.id}?$select=id,isCancelled`, { headers: PREFER }));
+    if (ev && !ev.isCancelled) continue; // hors de la période lue
+    const localChanged = (t.updatedAt || 0) > (t.outlook.syncedAt || 0);
+    if (localChanged) { t.outlook = null; putTask(t, { silent: true, touch: false }); } // sera recréé
+    else { t.start = null; t.end = null; t.outlook = null; putTask(t, { silent: true }); n++; } // retourne dans To Do
   }
   if (applied.length) propagate(applied);
+  return n;
+}
 
-  // 2. Envoi des modifications locales
+async function pushEvents(from, stats) {
+  let n = 0;
   for (const t of tasks()) {
     const o = t.outlook;
     try {
-      if (o?.id && !t.start) {
-        await graph(`/me/events/${o.id}`, { method: 'DELETE' }).catch((e) => { if (e.status !== 404) throw e; });
+      if (o?.id && !inAgenda(t)) {
+        await ignore404(graph(`/me/events/${o.id}`, { method: 'DELETE' }));
         t.outlook = null; putTask(t, { silent: true, touch: false }); stats.removed++;
-      } else if (t.start && !o?.id) {
-        if (tEnd(t) < from) continue; // trop ancienne
-        const ev = await graph(`${calBase()}/events`, { method: 'POST', body: payload(t), headers: PREFER });
-        markSynced(t, ev); stats.pushed++;
-      } else if (o?.id && t.updatedAt > (o.syncedAt || 0)) {
-        const ev = await graph(`/me/events/${o.id}`, { method: 'PATCH', body: payload(t), headers: PREFER });
-        markSynced(t, ev); stats.pushed++;
+      } else if (inAgenda(t) && !o?.id) {
+        if (tEnd(t) < from) continue;
+        const ev = await graph(`${calBase()}/events`, { method: 'POST', body: eventPayload(t), headers: PREFER });
+        t.outlook = { id: ev.id, remoteMod: ev.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
+        putTask(t, { silent: true, touch: false }); n++;
+      } else if (inAgenda(t) && o?.id && (t.updatedAt || 0) > (o.syncedAt || 0)) {
+        const ev = await graph(`/me/events/${o.id}`, { method: 'PATCH', body: eventPayload(t), headers: PREFER });
+        t.outlook = { id: ev.id, remoteMod: ev.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
+        putTask(t, { silent: true, touch: false }); n++;
       }
     } catch (e) {
       if (e.status === 404 && o?.id) { t.outlook = null; putTask(t, { silent: true, touch: false }); continue; }
       throw e;
     }
   }
-
-  // 3. Tâches supprimées dans l'application
-  for (const del of Object.values(db.deleted)) {
-    if (!del.outlookId) continue;
-    await graph(`/me/events/${del.outlookId}`, { method: 'DELETE' }).catch((e) => { if (e.status !== 404) throw e; });
-    del.outlookId = null; stats.removed++;
-  }
-
-  save('sync');
-  return stats;
+  return n;
 }
+
+// ---------- Tâches supprimées dans l'application ----------
+async function pushDeleted(stats) {
+  const listId = local.get('todoListId');
+  for (const del of Object.values(db.deleted)) {
+    if (del.outlookId) { await ignore404(graph(`/me/events/${del.outlookId}`, { method: 'DELETE' })); del.outlookId = null; stats.removed++; }
+    if (del.todoId && listId) { await ignore404(graph(`/me/todo/lists/${listId}/tasks/${del.todoId}`, { method: 'DELETE' })); del.todoId = null; stats.removed++; }
+  }
+}
+
