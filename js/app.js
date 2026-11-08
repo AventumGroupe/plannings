@@ -3,6 +3,7 @@
 import { db, onChange, setSettings, local, exportJson, replaceDb, mergeRemote, tasks, newTask, putTask, newProject, putProject, newResource, putResource, save } from './store.js';
 import { rollOverdue, propagate } from './sched.js';
 import { renderList } from './list.js';
+import { renderMatrix } from './matrix.js';
 import { renderCalendar, calendarRoute, setCalendarHooks } from './calendar.js';
 import { renderGantt } from './gantt.js';
 import { renderResources } from './resources.js';
@@ -12,9 +13,10 @@ import { notifSupported, notifEnabled, enableNotifications, disableNotifications
 import { toast, confirmDialog, slider, bindSliders, info } from './ui.js';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
+  { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
   { id: 'calendrier', label: 'Calendrier', icon: 'calendar', render: renderCalendar },
   { id: 'gantt', label: 'Gantt', icon: 'gantt', render: renderGantt },
   { id: 'ressources', label: 'Ressources', icon: 'people', render: renderResources },

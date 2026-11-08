@@ -157,10 +157,6 @@ export function renderList(el) {
           <option value="all" ${F.status === 'all' ? 'selected' : ''}>Toutes</option>
         </select>
         <button class="icon-btn filt ${F.more ? 'on' : ''}" data-more title="Filtres et tri" aria-expanded="${F.more}">${icon('filter', 18)}${activeFilters() ? `<i class="dotn">${activeFilters()}</i>` : ''}</button>
-        <div class="seg sm mode" role="group" aria-label="Affichage">
-          <button class="seg-opt ${F.mode === 'list' ? 'on' : ''}" data-mode="list" title="Liste">${icon('list', 16)}</button>
-          <button class="seg-opt ${F.mode === 'matrix' ? 'on' : ''}" data-mode="matrix" title="Cartographie urgence · importance · énergie">${icon('grid', 16)}</button>
-        </div>
       </div>
       ${F.more ? `<div class="toolbar more">
         <select data-filter="project" aria-label="Projet">
@@ -182,7 +178,7 @@ export function renderList(el) {
         </select>
       </div>` : ''}
 
-      ${list.length === 0 ? emptyHtml(all.length) : F.mode === 'matrix' ? mapHtml(list, an) : groupsHtml(list, an)}
+      ${list.length === 0 ? emptyHtml(all.length) : groupsHtml(list, an)}
     </section>`;
 
   bind(root, el);

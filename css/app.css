@@ -860,3 +860,62 @@ body[data-view="reglages"] .fab, body[data-view="ressources"] .fab { display: no
 }
 .inline-new { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
 .inline-new input { flex: 1; min-width: 0; }
+
+/* =====================================================================
+   v1.6 : onglet Matrice (urgence × importance, un panneau par énergie)
+   ===================================================================== */
+.mx-view { max-width: 1280px; padding-bottom: 110px; }
+body[data-view="matrice"] .view { max-width: 1280px; }
+.mx-toolbar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.mx-toolbar h2 { font-size: 1.2rem; }
+.mx-toolbar select { width: auto; }
+.mx-toolbar .sld.compact:not(:has(.sld-top)) { width: 200px; }
+.mx-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.mx-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 12px 8px; min-width: 0; }
+.mx-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mx-head h3 { font-size: 1rem; }
+.mx-head small { color: var(--muted); }
+.mx-head .count { margin-left: auto; }
+.mx-swatch { width: 26px; height: 10px; border-radius: 5px; }
+.mx-swatch.dyn { background: linear-gradient(90deg, var(--e3), var(--e4)); }
+.mx-swatch.plomb { background: linear-gradient(90deg, var(--e1), var(--e2)); }
+.mx-grid {
+  position: relative; display: grid; grid-template-columns: 24px repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(5, minmax(78px, auto)) 22px; gap: 3px; padding-bottom: 18px; padding-top: 18px;
+}
+.mx-zone {
+  border-radius: 10px; background: color-mix(in srgb, var(--cc) 10%, var(--surface)); border: 1.5px solid color-mix(in srgb, var(--cc) 35%, transparent);
+  position: relative; z-index: 0; margin: -1px;
+}
+.mx-zone.c-reste { background: var(--surface-2); border-color: var(--line); }
+.mx-zlabel { position: relative; z-index: 2; align-self: end; display: flex; align-items: center; gap: 5px; padding: 0 8px 6px; font-size: .78rem; pointer-events: none; min-width: 0; }
+.mx-zlabel b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mx-zlabel b { color: var(--cc); }
+.mx-zlabel.c-reste b, .mx-zlabel.c-cote b { color: var(--muted); }
+.mx-zlabel .info, .mx-zlabel .count { pointer-events: auto; }
+.mx-cell { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 3px; padding: 4px 3px 26px; min-width: 0; border-radius: 8px; }
+.mx-cell.drop-hl { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 10%, transparent) !important; }
+.mx-dot {
+  display: flex; align-items: center; gap: 5px; width: 100%; min-width: 0; padding: 4px 6px; border-radius: 7px; border: 0;
+  background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.15); font: inherit; font-size: .74rem; color: var(--text); cursor: grab; text-align: left;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y;
+}
+.mx-dot i { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--muted); }
+.mx-dot.e1 i { background: var(--e1); } .mx-dot.e2 i { background: var(--e2); } .mx-dot.e3 i { background: var(--e3); } .mx-dot.e4 i { background: var(--e4); }
+.mx-dot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-dot.done { opacity: .5; } .mx-dot.done span { text-decoration: line-through; }
+.mx-dot.deleg { box-shadow: 0 0 0 1.5px var(--warn); }
+.mx-dot.drag-src { opacity: .3; }
+.mx-ax { display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; color: var(--muted); }
+.mx-axname { position: absolute; font-size: .72rem; font-weight: 650; color: var(--muted); }
+.mx-axname.x { right: 0; bottom: 0; }
+.mx-axname.y { left: 0; top: 0; }
+@media (max-width: 900px) { .mx-panels { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .mx-grid { grid-template-columns: 18px repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(5, minmax(64px, auto)) 20px; gap: 2px; }
+  .mx-dot { font-size: .66rem; padding: 3px 4px; gap: 3px; }
+  .mx-dot i { width: 7px; height: 7px; }
+  .mx-zlabel { font-size: .68rem; padding: 0 4px 5px; }
+  .mx-toolbar .sld.compact:not(:has(.sld-top)) { width: 170px; }
+  .bottom-nav a { font-size: .62rem; padding: 6px 0; }
+}

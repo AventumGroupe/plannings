@@ -1,10 +1,10 @@
 // Service worker : fonctionnement hors connexion (cache de l'application).
-const VERSION = 'gp-v1.5.1';
+const VERSION = 'gp-v1.6.0';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/sched.js', './js/util.js', './js/ui.js', './js/list.js',
   './js/editor.js', './js/calendar.js', './js/gantt.js', './js/resources.js', './js/suggest.js',
-  './js/drag.js', './js/outlook.js', './js/notify.js',
+  './js/drag.js', './js/outlook.js', './js/notify.js', './js/matrix.js',
   './vendor/msal-browser.min.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/badge-96.png',
 ];
