@@ -1,5 +1,5 @@
 // Service worker : fonctionnement hors connexion (cache de l'application).
-const VERSION = 'gp-v1.8.0';
+const VERSION = 'gp-v1.8.1';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/sched.js', './js/util.js', './js/ui.js', './js/list.js',
@@ -19,21 +19,23 @@ self.addEventListener('activate', (e) => {
     .then(() => self.clients.claim()));
 });
 
-// Fichiers de l'application : réponse immédiate depuis le cache, mise à jour en arrière-plan.
-// Microsoft (connexion, Graph, OneDrive) : jamais mis en cache.
+// Fichiers de l'application : réseau d'abord (toujours la dernière version, sans mélange de versions),
+// copie locale seulement hors connexion. Microsoft et GitHub (données) ne sont jamais mis en cache.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
-  e.respondWith(caches.open(VERSION).then(async (cache) => {
-    const key = req.mode === 'navigate' ? './index.html' : req;
-    const cached = await cache.match(key, { ignoreSearch: req.mode === 'navigate' });
-    const network = fetch(req).then((res) => {
+  const key = req.mode === 'navigate' ? './index.html' : req;
+  e.respondWith((async () => {
+    const cache = await caches.open(VERSION);
+    try {
+      const res = await fetch(req, { cache: 'no-cache' });
       if (res.ok && res.type === 'basic') cache.put(key, res.clone());
       return res;
-    }).catch(() => cached);
-    return cached || network;
-  }));
+    } catch {
+      return (await cache.match(key, { ignoreSearch: req.mode === 'navigate' })) || Response.error();
+    }
+  })());
 });
 
 self.addEventListener('notificationclick', (e) => {
