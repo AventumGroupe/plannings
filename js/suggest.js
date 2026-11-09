@@ -119,7 +119,7 @@ export function suggestions(analysis = analyze()) {
   // 6b. Règle des 2 minutes (Allen)
   for (const t of open.filter((t) => (t.estimate || 60) <= 2).slice(0, 3)) {
     push({ key: `now:${t.id}`, kind: 'now', tone: 'accent', taskId: t.id, title: 'Moins de 2 minutes : maintenant',
-      text: `« ${t.title} » prend moins de 2 minutes : plus rapide à faire qu’à planifier (D. Allen, GTD).`,
+      text: `« ${t.title} » prend moins de 2 minutes : plus rapide à faire qu’à planifier.`,
       actions: [{ label: 'C’est fait', run: () => { t.status = 'done'; t.doneAt = Date.now(); putTask(t); } }] });
   }
 
@@ -128,7 +128,7 @@ export function suggestions(analysis = analyze()) {
   if (small.length >= 2) {
     push({ key: `batch:${small.map((t) => t.id).join(',').slice(0, 60)}`, kind: 'batch', tone: 'muted',
       title: 'Regrouper les petites tâches',
-      text: `${small.length} petites tâches (${small.map((t) => t.title).slice(0, 3).join(', ')}${small.length > 3 ? '…' : ''}) : à enchaîner dans un même créneau en début d’après-midi, pour ne pas émietter les moments de concentration (Allen, Newport, Leroy).`,
+      text: `${small.length} petites tâches (${small.map((t) => t.title).slice(0, 3).join(', ')}${small.length > 3 ? '…' : ''}) : à enchaîner dans un même créneau en début d’après-midi, pour ne pas émietter les moments de concentration.`,
       actions: [{ label: 'Regrouper', run: () => batchSmall(small) }] });
   }
 
@@ -149,14 +149,14 @@ export function suggestions(analysis = analyze()) {
       actions: [{ label: isLeader() ? 'Marquer « à automatiser »' : 'Marquer « à proposer »', run: () => { t.automate = true; putTask(t); } }] });
   }
 
-  // 6f. Plafond d'environ 4 h de travail concentré par jour (Ericsson)
+  // 6f. Plafond d'environ 4 h de travail concentré par jour
   for (let i = 0; i < 5; i++) {
     const d = addDays(startOfDay(now), i);
     const focus = open.filter((t) => t.start && !t.allDay && (t.estimate || 60) >= 25 && sameDay(tStart(t), d) && sameDay(tStart(t), new Date(tEnd(t) - 1)));
     const h = focus.reduce((x, t) => x + (tEnd(t) - tStart(t)) / HOUR, 0);
     if (h > 4) {
       push({ key: `focus:${d.toDateString()}`, kind: 'focus', tone: 'warn', title: 'Plus de 4 h de concentration',
-        text: `${cap(fmt.dayLong.format(d))} : ${h.toFixed(1).replace('.', ',')} h de travail concentré prévu. Au-delà d’environ 4 h par jour, l’attention chute nettement (Ericsson) : reportez une séance ou intercalez des tâches légères.`,
+        text: `${cap(fmt.dayLong.format(d))} : ${h.toFixed(1).replace('.', ',')} h de travail concentré prévu. Au-delà d’environ 4 h par jour, l’attention chute nettement : reportez une séance ou intercalez des tâches légères.`,
         actions: [{ label: 'Voir le jour', href: `#calendrier/jour/${toDateStr(d)}` }] });
     }
   }

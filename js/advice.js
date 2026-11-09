@@ -99,10 +99,9 @@ export function adviceHtml(t) {
   return `
     <div class="adv">
       <div class="adv-head c-${cat}"><i class="grp-dot"></i><b>${esc(catInfo(cat).label)}</b><span>${spentOf(t) ? `reste ${esc(fmtDuration(remainingOf(t)))} / ${esc(fmtDuration(t.estimate || 0))}` : esc(fmtDuration(t.estimate || 60))}</span></div>
-      <p class="adv-rhythm">${icon('repeat', 14)} ${esc(r.text)} <small>(${esc(r.src)})</small></p>
+      <p class="adv-rhythm">${icon('repeat', 14)} ${esc(r.text)}</p>
       <ol class="adv-opts">${opts.map((o) => `
-        <li><b>${esc(o.title)}</b><p>${esc(o.text)}</p><small class="muted">Source : ${esc(o.src)}</small>
-          ${o.actions.length ? `<div class="adv-acts">${o.actions.map((a) => `<button type="button" class="btn sm ${a.act.startsWith('delegate') || a.act === 'sessions' || a.act === 'sessions-spread' ? 'primary' : 'ghost'}" data-adv="${esc(a.act)}">${esc(a.label)}</button>`).join('')}</div>` : ''}
+        <li><b>${esc(o.title)}</b><p>${esc(o.text)}</p>          ${o.actions.length ? `<div class="adv-acts">${o.actions.map((a) => `<button type="button" class="btn sm ${a.act.startsWith('delegate') || a.act === 'sessions' || a.act === 'sessions-spread' ? 'primary' : 'ghost'}" data-adv="${esc(a.act)}">${esc(a.label)}</button>`).join('')}</div>` : ''}
         </li>`).join('')}
       </ol>
     </div>`;

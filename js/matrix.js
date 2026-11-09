@@ -88,7 +88,7 @@ export function renderMatrix(el) {
   el.innerHTML = `
     <section class="view mx-view">
       <div class="mx-toolbar">
-        <h2>Matrice</h2>${info('', 'Urgence en horizontal, importance en vertical, un panneau par énergie ; la taille de la pastille indique la durée. Glissez une tâche pour la repositionner. Touchez-la pour voir « Que faire ? » : préconisations détaillées et actions. Les bulles « i » des zones rappellent la décision selon votre profil.')}${info('sources')}
+        <h2>Matrice</h2>${info('', 'Urgence en horizontal, importance en vertical, un panneau par énergie ; la taille de la pastille indique la durée. Glissez une tâche pour la repositionner. Touchez-la pour voir « Que faire ? » : préconisations détaillées et actions. Les bulles « i » des zones rappellent la décision selon votre profil.')}
         <span class="spacer"></span>
         ${slider('mxrole', { values: ['dirigeant', 'collaborateur'], labels: ['Dirigeant', 'Collaborateur'], value: db.settings.role || 'dirigeant', ticks: 'labels', compact: true })}
         <select data-mx="project" aria-label="Projet">

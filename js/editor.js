@@ -204,7 +204,7 @@ export function openTaskEditor(idOrPreset = null) {
         <label class="field"><span>Échéance</span><input type="date" data-f="due" value="${esc(d.due || '')}"></label>
       </div>
       <details class="block adv-block" open>
-        <summary>${icon('bulb', 18)} <span>Que faire ?</span>${info('sources')}<span class="caret">${icon('chevR', 14)}</span></summary>
+        <summary>${icon('bulb', 18)} <span>Que faire ?</span><span class="caret">${icon('chevR', 14)}</span></summary>
         <div data-part="advice">${adviceHtml(d)}</div>
       </details>
       ${sec('planning', 'calendar', 'Planification', d.start ? 1 : 0, planningHtml(), 'planif', true)}
