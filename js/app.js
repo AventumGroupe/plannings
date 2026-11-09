@@ -17,7 +17,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus (Cirillo, Albulescu). Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min dans le flow (Kleitman, Csikszentmihalyi). Au-delà d’environ 4 h de travail concentré par jour, l’attention chute (Ericsson).';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
@@ -42,8 +42,10 @@ function route() {
   const [tab, ...rest] = (location.hash.replace(/^#\/?/, '') || 'taches').split('/');
   current = TABS.some((t) => t.id === tab) ? tab : 'taches';
   if (current === 'calendrier') calendarRoute(rest);
+  const focusSync = current === 'reglages' && rest[0] === 'sync';
   document.querySelectorAll('[data-tab]').forEach((a) => a.classList.toggle('on', a.dataset.tab === current));
   render();
+  if (focusSync) setTimeout(() => document.querySelector('[data-sync-card]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 }
 
 function render() {
@@ -80,7 +82,7 @@ function shell() {
   document.body.addEventListener('click', (e) => {
     if (e.target.closest('[data-add]')) openTaskEditor();
     if (e.target.closest('[data-syncnow]')) {
-      if (ms.isConnected() || ghConfigured()) manualSync(); else location.hash = '#reglages';
+      if (ms.isConnected() || ghConfigured()) manualSync(); else location.hash = '#reglages/sync';
     }
   });
   updateSyncIndicator();
@@ -169,7 +171,7 @@ function renderSettings(el) {
       </section>
 
       <section class="card set">
-        <h3>${icon('sync', 18)} Téléphone ↔ ordinateur ${info('github')}</h3>
+        <h3 data-sync-card>${icon('sync', 18)} Téléphone ↔ ordinateur ${info('github')}</h3>
         ${ghConfigured() ? `
           <p class="ok-text">${icon('check', 16)} Données partagées via <b>${esc(ghRepo())}</b></p>
           <div class="row wrap gap">

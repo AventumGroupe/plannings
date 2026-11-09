@@ -942,3 +942,7 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .mx-dot.sz-l { padding-top: 7px; padding-bottom: 7px; font-weight: 600; border-left: 3px solid var(--text); }
 .mx-dot.auto { box-shadow: 0 0 0 1.5px var(--accent); }
 @media (max-width: 760px) { .mx-dot em { display: none; } }
+.sync-banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 14px; text-decoration: none; color: var(--text); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
+.sync-banner > .ico { color: var(--warn); flex: none; }
+.sync-banner div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sync-banner span:not(.btn) { font-size: .84rem; color: var(--muted); }

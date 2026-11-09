@@ -6,6 +6,8 @@ import { suggestions, dismiss } from './suggest.js';
 import { openTaskEditor } from './editor.js';
 import { slider, bindSliders, info, LV, EN, energyChip, levelChip, projectChip, whenLabel, dueLabel, toast } from './ui.js';
 import { esc, icon, toDateStr, fmtDuration } from './util.js';
+import { isConnected as msConnected } from './outlook.js';
+import { ghConfigured } from './github.js';
 
 const F = Object.assign({ status: 'open', project: '', energy: '', q: '', sort: 'score', mode: 'list', sugg: true }, local.get('listFilters', {}));
 const activeFilters = () => [F.project, F.energy, F.sort !== 'score' ? 1 : ''].filter(Boolean).length;
@@ -148,6 +150,7 @@ export function renderList(el) {
   root.innerHTML = `
     <section class="view list-view">
 
+      ${!msConnected() && !ghConfigured() ? `<a class="card sync-banner" href="#reglages/sync">${icon('sync', 20)}<div><b>Cet appareil n’est pas synchronisé</b><span>Les tâches saisies sur l’application (ou un autre ordinateur) n’apparaissent pas ici. Connectez-le une fois.</span></div><span class="btn primary sm">Connecter</span></a>` : ''}
       ${suggestionsHtml(an)}
 
       <div class="toolbar">
