@@ -11,10 +11,13 @@ import { openTaskEditor } from './editor.js';
 import * as ms from './outlook.js';
 import { ghSync, ghStatus, onGhStatus, ghConfigured, ghRepo, ghSetup, ghDisconnect } from './github.js';
 import { notifSupported, notifEnabled, enableNotifications, disableNotifications, show, startReminders } from './notify.js';
-import { toast, confirmDialog, slider, bindSliders, info } from './ui.js';
+import { toast, confirmDialog, slider, bindSliders, info, INFO } from './ui.js';
+import { sourcesHtml } from './advice.js';
+INFO.sources = sourcesHtml();
+INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus (Cirillo, Albulescu). Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min dans le flow (Kleitman, Csikszentmihalyi). Au-delà d’environ 4 h de travail concentré par jour, l’attention chute (Ericsson).';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '1.9.2';
+const VERSION = '2.0.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
@@ -145,6 +148,15 @@ function renderSettings(el) {
       </section>
 
       <section class="card set">
+        <h3>${icon('repeat', 18)} Rythme de travail ${info('rythme')} ${info('sources')}</h3>
+        <div class="grid3">
+          ${slider('sessionPlomb', { label: 'Séance plombante', values: [15, 20, 25, 30, 45], labels: ['15 min', '20 min', '25 min', '30 min', '45 min'], value: S.sessionPlomb ?? 25, ticks: false })}
+          ${slider('sessionDyn', { label: 'Séance dynamisante', values: [25, 45, 50, 60, 90], labels: ['25 min', '45 min', '50 min', '60 min', '90 min'], value: S.sessionDyn ?? 50, ticks: false })}
+          ${slider('breakMin', { label: 'Pause', values: [3, 5, 10, 15], labels: ['3 min', '5 min', '10 min', '15 min'], value: S.breakMin ?? 5, ticks: false })}
+        </div>
+      </section>
+
+      <section class="card set">
         <h3>${icon('sun', 18)} Journée</h3>
         <div class="grid3">
           ${hs(5, 12, 'dayStart', 'Début')}
@@ -249,7 +261,7 @@ function renderSettings(el) {
   const root = el.querySelector('.settings');
   bindSliders(root, (name, v, final) => {
     if (name === 'theme') { if (final) { setSettings({ theme: v }); applyTheme(); } return; }
-    if (final && ['dayStart', 'morningEnd', 'dayEnd', 'reminder', 'role'].includes(name)) setSettings({ [name]: v });
+    if (final && ['dayStart', 'morningEnd', 'dayEnd', 'reminder', 'role', 'sessionPlomb', 'sessionDyn', 'breakMin'].includes(name)) setSettings({ [name]: v });
   });
 
   root.addEventListener('change', async (e) => {

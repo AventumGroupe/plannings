@@ -3,7 +3,8 @@
 
 import { db, tasks, putTask, save, local, people, score, category, isLeader } from './store.js';
 import { tStart, tEnd, setSpan, proposeSlot, analyze, propagate, findFreeSlot } from './sched.js';
-import { fmt, cap, sameDay, addDays, startOfDay, toDateStr, MIN, HOUR } from './util.js';
+import { fmt, cap, sameDay, addDays, startOfDay, toDateStr, fmtDuration, MIN, HOUR } from './util.js';
+import { sessionOf, planSessions, batchSmall, rhythmOf } from './advice.js';
 
 const DISMISS_DAYS = 7;
 
@@ -35,7 +36,8 @@ function placeAt(t, start) {
 export function suggestions(analysis = analyze()) {
   const out = [];
   const S = db.settings;
-  const open = tasks().filter((t) => t.status !== 'done');
+  // Les séances 2, 3… d'une tâche découpée ne génèrent pas de propositions en double.
+  const open = tasks().filter((t) => t.status !== 'done' && !/\(séance (?:[2-9]|\d{2,})\/\d+\)$/.test(t.title));
   const now = new Date();
   const horizon = addDays(now, 7);
   const dis = dismissed();
@@ -114,21 +116,48 @@ export function suggestions(analysis = analyze()) {
     });
   }
 
-  // 6b. Collaborateur : tâche très plombante et longue -> séances courtes
-  if (!isLeader()) {
-    for (const t of open.filter((t) => t.energy === 1 && (t.estimate || 60) > 90 && !t.allDay)) {
-      push({
-        key: `split:${t.id}`, kind: 'split', tone: 'energy', taskId: t.id,
-        title: 'Découper en séances',
-        text: `« ${t.title} » est très plombante (${Math.round((t.estimate || 60) / 60 * 10) / 10} h). Mieux vaut 2 à 3 séances d’environ 45 min sur plusieurs matinées, notées en sous-tâches.`,
-        actions: [{ label: 'Découper', run: () => {
-          const n = Math.min(4, Math.ceil((t.estimate || 60) / 45));
-          if (!t.subtasks.length) t.subtasks = Array.from({ length: n }, (_, i) => ({ id: `${t.id}-s${i}`, title: `Séance ${i + 1}`, done: false }));
-          t.estimate = Math.ceil((t.estimate || 60) / n / 15) * 15;
-          if (t.start) setSpan(t, tStart(t), new Date(tStart(t).getTime() + t.estimate * MIN));
-          putTask(t);
-        } }],
-      });
+  // 6b. Règle des 2 minutes (Allen)
+  for (const t of open.filter((t) => (t.estimate || 60) <= 2).slice(0, 3)) {
+    push({ key: `now:${t.id}`, kind: 'now', tone: 'accent', taskId: t.id, title: 'Moins de 2 minutes : maintenant',
+      text: `« ${t.title} » prend moins de 2 minutes : plus rapide à faire qu’à planifier (D. Allen, GTD).`,
+      actions: [{ label: 'C’est fait', run: () => { t.status = 'done'; t.doneAt = Date.now(); putTask(t); } }] });
+  }
+
+  // 6c. Regrouper les petites tâches dans le creux de l'après-midi (Allen, Newport, Pink)
+  const small = open.filter((t) => !t.start && (t.estimate || 60) > 2 && (t.estimate || 60) < 15);
+  if (small.length >= 2) {
+    push({ key: `batch:${small.map((t) => t.id).join(',').slice(0, 60)}`, kind: 'batch', tone: 'muted',
+      title: 'Regrouper les petites tâches',
+      text: `${small.length} petites tâches (${small.map((t) => t.title).slice(0, 3).join(', ')}${small.length > 3 ? '…' : ''}) : à enchaîner dans un même créneau en début d’après-midi, pour ne pas émietter les moments de concentration (Allen, Newport, Leroy).`,
+      actions: [{ label: 'Regrouper', run: () => batchSmall(small) }] });
+  }
+
+  // 6d. Tâches longues à découper en séances (Cirillo, Kleitman)
+  for (const t of open.filter((t) => !t.start && !/\(séance \d+\/\d+\)$/.test(t.title) && (t.estimate || 60) > sessionOf(t)).sort((a, b) => score(b) - score(a)).slice(0, 2)) {
+    const r = rhythmOf(t);
+    push({ key: `split:${t.id}:${t.estimate}`, kind: 'split', tone: 'energy', taskId: t.id,
+      title: 'Découper en séances',
+      text: `« ${t.title} » (${fmtDuration(t.estimate)}) : ${r.text}`,
+      actions: [{ label: `Planifier ${r.n} séances`, run: () => planSessions(t, { spread: t.energy <= 2 && category(t) === 'collaborer' }) }] });
+  }
+
+  // 6e. Récurrente et plombante : candidate à l'automatisation (Loehr & Schwartz)
+  for (const t of open.filter((t) => t.recur && t.energy <= 2 && !t.automate).slice(0, 2)) {
+    push({ key: `auto:${t.id}`, kind: 'auto', tone: 'warn', taskId: t.id,
+      title: isLeader() ? 'À automatiser ?' : 'Automatisation à proposer ?',
+      text: `« ${t.title} » revient régulièrement et vous coûte de l’énergie : ${isLeader() ? 'modèle, réponse type, règle Outlook ou Power Automate' : 'proposez à votre responsable de l’automatiser'}.`,
+      actions: [{ label: isLeader() ? 'Marquer « à automatiser »' : 'Marquer « à proposer »', run: () => { t.automate = true; putTask(t); } }] });
+  }
+
+  // 6f. Plafond d'environ 4 h de travail concentré par jour (Ericsson)
+  for (let i = 0; i < 5; i++) {
+    const d = addDays(startOfDay(now), i);
+    const focus = open.filter((t) => t.start && !t.allDay && (t.estimate || 60) >= 25 && sameDay(tStart(t), d));
+    const h = focus.reduce((x, t) => x + (tEnd(t) - tStart(t)) / HOUR, 0);
+    if (h > 4) {
+      push({ key: `focus:${d.toDateString()}`, kind: 'focus', tone: 'warn', title: 'Plus de 4 h de concentration',
+        text: `${cap(fmt.dayLong.format(d))} : ${h.toFixed(1).replace('.', ',')} h de travail concentré prévu. Au-delà d’environ 4 h par jour, l’attention chute nettement (Ericsson) : reportez une séance ou intercalez des tâches légères.`,
+        actions: [{ label: 'Voir le jour', href: `#calendrier/jour/${toDateStr(d)}` }] });
     }
   }
 

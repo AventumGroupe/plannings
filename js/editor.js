@@ -6,9 +6,10 @@ import {
 } from './store.js';
 import { tStart, tEnd, setSpan, shiftTo, requiredStart, propagate, succsOf, completeTask, proposeSlot, RECUR } from './sched.js';
 import { openDialog, confirmDialog, toast, slider, bindSliders, info, LV, EN } from './ui.js';
+import { adviceHtml, runAdvice } from './advice.js';
 import { esc, icon, uid, parse, toLocal, toDateStr, addMinutes, fmt, cap, fmtDuration, MIN } from './util.js';
 
-const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480];
+const DURATIONS = [2, 5, 10, 15, 25, 30, 45, 50, 60, 90, 120, 180, 240, 300, 360, 480];
 const REMINDERS = [[null, 'Aucun'], [0, 'À l’heure'], [5, '5 min avant'], [15, '15 min avant'], [30, '30 min avant'], [60, '1 h avant'], [120, '2 h avant'], [1440, 'La veille']];
 const WEEKDAYS = [[1, 'L'], [2, 'M'], [3, 'M'], [4, 'J'], [5, 'V'], [6, 'S'], [0, 'D']];
 
@@ -191,6 +192,10 @@ export function openTaskEditor(idOrPreset = null) {
           <option value="__new">＋ Nouveau projet…</option></select></label>
         <label class="field"><span>Échéance</span><input type="date" data-f="due" value="${esc(d.due || '')}"></label>
       </div>
+      <details class="block adv-block" open>
+        <summary>${icon('bulb', 18)} <span>Que faire ?</span>${info('sources')}<span class="caret">${icon('chevR', 14)}</span></summary>
+        <div data-part="advice">${adviceHtml(d)}</div>
+      </details>
       ${sec('planning', 'calendar', 'Planification', d.start ? 1 : 0, planningHtml(), 'planif', true)}
       <details class="block" ${d.delegate || d.reminder != null ? '' : ''}>
         <summary>${icon('bell', 18)} <span>${isLeader() ? 'Rappel et délégation' : 'Rappel'}</span><span class="caret">${icon('chevR', 14)}</span></summary>
@@ -254,6 +259,7 @@ export function openTaskEditor(idOrPreset = null) {
       d.recur = v ? { ...(d.recur || {}), freq: v, interval: d.recur?.interval || 1, days: d.recur?.days || [] } : null;
       if (final || !v || !body.querySelector('[data-sld="recurInterval"]')) part('recur', recurHtml());
     } else if (name === 'recurInterval' && d.recur) d.recur.interval = Number(v);
+    if (final && ['urgency', 'importance', 'energy', 'estimate'].includes(name)) part('advice', adviceHtml(d));
   });
 
   body.addEventListener('input', (e) => {
@@ -339,6 +345,14 @@ export function openTaskEditor(idOrPreset = null) {
   el.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.adv) {
+      d.title = d.title.trim();
+      if (!d.title) { body.querySelector('[data-f="title"]').focus(); toast('Donnez d’abord un titre à la tâche.'); return; }
+      commit(); close();
+      const msg = runAdvice(db.tasks[d.id], b.dataset.adv);
+      if (msg) toast(msg);
+      return;
+    }
     if (b.dataset.rmpred) { d.preds = d.preds.filter((p) => p.id !== b.dataset.rmpred); part('deps', depsHtml()); }
     else if (b.dataset.rmsucc) { succIds = succIds.filter((x) => x !== b.dataset.rmsucc); part('deps', depsHtml()); }
     else if (b.dataset.rmres) { d.assign = d.assign.filter((a) => a.id !== b.dataset.rmres); part('res', resHtml()); }

@@ -6,7 +6,9 @@ import { db, tasks, projects, putTask, local, setSettings, category, catInfo, is
 import { openTaskEditor } from './editor.js';
 import { enableDrag, makeGhost, dropTarget } from './drag.js';
 import { slider, bindSliders, info, toast } from './ui.js';
-import { esc, icon } from './util.js';
+import { esc, icon, fmtDuration } from './util.js';
+import { adviceHtml, runAdvice } from './advice.js';
+import { openDialog } from './ui.js';
 
 const M = Object.assign({ project: '', done: false }, local.get('matrix', {}));
 const persist = () => local.set('matrix', M);
@@ -57,8 +59,8 @@ function panelHtml(kind, list) {
     for (let u = 1; u <= 5; u++) {
       const here = list.filter((t) => t.urgency === u && t.importance === i).sort((a, b) => score(b) - score(a));
       cells.push(`<div class="mx-cell" data-cell data-u="${u}" data-i="${i}" data-panel="${kind}" style="grid-column:${col(u)};grid-row:${row(i)}">
-        ${here.map((t) => `<button data-drag-ok class="mx-dot e${t.energy} ${t.status === 'done' ? 'done' : ''} ${t.delegate ? 'deleg' : ''}" data-mx-task="${t.id}" title="${esc(t.title)} · U${t.urgency} I${t.importance} · ${ENERGY[t.energy].label}">
-          <i></i><span>${esc(t.title)}</span></button>`).join('')}
+        ${here.map((t) => { const dm = t.estimate || 60; const sz = dm <= 15 ? 's' : dm <= 60 ? 'm' : 'l'; return `<button data-drag-ok class="mx-dot sz-${sz} e${t.energy} ${t.status === 'done' ? 'done' : ''} ${t.delegate ? 'deleg' : ''} ${t.automate ? 'auto' : ''}" data-mx-task="${t.id}" title="${esc(t.title)} · U${t.urgency} I${t.importance} · ${ENERGY[t.energy].label} · ${fmtDuration(dm)}">
+          <i></i><span>${esc(t.title)}</span><em>${esc(fmtDuration(dm).replace(' min', '′'))}</em></button>`; }).join('')}
       </div>`);
     }
   }
@@ -86,7 +88,7 @@ export function renderMatrix(el) {
   el.innerHTML = `
     <section class="view mx-view">
       <div class="mx-toolbar">
-        <h2>Matrice</h2>${info('', 'Urgence en horizontal, importance en vertical, un panneau par énergie. Glissez une tâche pour la repositionner : son urgence, son importance (et son énergie si vous changez de panneau) sont mises à jour. Touchez-la pour ouvrir sa fiche. Les bulles « i » rappellent la décision à prendre selon votre profil.')}
+        <h2>Matrice</h2>${info('', 'Urgence en horizontal, importance en vertical, un panneau par énergie ; la taille de la pastille indique la durée. Glissez une tâche pour la repositionner. Touchez-la pour voir « Que faire ? » : préconisations détaillées et actions. Les bulles « i » des zones rappellent la décision selon votre profil.')}${info('sources')}
         <span class="spacer"></span>
         ${slider('mxrole', { values: ['dirigeant', 'collaborateur'], labels: ['Dirigeant', 'Collaborateur'], value: db.settings.role || 'dirigeant', ticks: 'labels', compact: true })}
         <select data-mx="project" aria-label="Projet">
@@ -112,7 +114,7 @@ function bind(el) {
   });
   root.addEventListener('click', (e) => {
     const d = e.target.closest('[data-mx-task]');
-    if (d) openTaskEditor(d.dataset.mxTask);
+    if (d) openAdvice(d.dataset.mxTask);
   });
 
   let ghost = null, hl = null;
@@ -146,5 +148,21 @@ function bind(el) {
       const after = category(t);
       if (after !== before) toast(`« ${t.title} » → ${catInfo(after).label}`);
     },
+  });
+}
+
+/** Fenêtre « Que faire ? » d'une tâche : préconisations et actions. */
+export function openAdvice(id) {
+  const t = db.tasks[id];
+  if (!t) return;
+  const { el, close } = openDialog({
+    title: t.title,
+    body: adviceHtml(t),
+    footer: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Fermer</button><button type="button" class="btn primary" data-open>Ouvrir la fiche</button>`,
+  });
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-adv]');
+    if (b) { const msg = runAdvice(db.tasks[id], b.dataset.adv); close(); if (msg) toast(msg); return; }
+    if (e.target.closest('[data-open]')) { close(); openTaskEditor(id); }
   });
 }

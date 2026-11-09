@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS = {
   reminder: 15,
   theme: 'auto',
   role: 'dirigeant',
+  sessionPlomb: 25, sessionDyn: 50, breakMin: 5,
   updatedAt: 0,
 };
 
@@ -51,7 +52,7 @@ function normalizeTask(t) {
     title: '', notes: '', urgency: 3, importance: 3, energy: 3, status: 'todo',
     projectId: null, start: null, end: null, allDay: false, estimate: 60, due: null,
     subtasks: [], preds: [], assign: [], delegate: null, recur: null, reminder: null,
-    outlook: null, todo: null, createdAt: Date.now(), updatedAt: Date.now(), doneAt: null, slips: 0,
+    outlook: null, todo: null, createdAt: Date.now(), updatedAt: Date.now(), doneAt: null, slips: 0, automate: false,
     ...t,
   };
 }

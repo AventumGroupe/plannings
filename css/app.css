@@ -919,3 +919,26 @@ body[data-view="matrice"] .view { max-width: 1280px; }
   .mx-toolbar .sld.compact:not(:has(.sld-top)) { width: 170px; }
   .bottom-nav a { font-size: .62rem; padding: 6px 0; }
 }
+
+/* =====================================================================
+   v2.0 : préconisations « Que faire ? », durée dans la matrice
+   ===================================================================== */
+.adv { display: flex; flex-direction: column; gap: 10px; }
+.adv-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--cc) 12%, var(--surface)); }
+.adv-head b { color: var(--cc); }
+.adv-head.c-cote b, .adv-head.c-reste b { color: var(--muted); }
+.adv-head span { margin-left: auto; font-size: .82rem; font-weight: 650; color: var(--muted); }
+.adv-rhythm { font-size: .88rem; margin: 0; display: flex; gap: 6px; align-items: flex-start; }
+.adv-rhythm small { color: var(--muted); }
+.adv-opts { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
+.adv-opts li::marker { font-weight: 700; color: var(--accent); }
+.adv-opts b { font-size: .93rem; }
+.adv-opts p { margin: 2px 0; font-size: .87rem; }
+.adv-opts small { font-size: .74rem; }
+.adv-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.adv-block[open] { background: color-mix(in srgb, var(--accent) 4%, transparent); border-radius: 10px; padding-left: 8px; padding-right: 8px; }
+.mx-dot em { margin-left: auto; font-style: normal; font-size: .66rem; font-weight: 700; color: var(--muted); flex: none; padding-left: 4px; }
+.mx-dot.sz-s { padding-top: 2px; padding-bottom: 2px; font-size: .7rem; }
+.mx-dot.sz-l { padding-top: 7px; padding-bottom: 7px; font-weight: 600; border-left: 3px solid var(--text); }
+.mx-dot.auto { box-shadow: 0 0 0 1.5px var(--accent); }
+@media (max-width: 760px) { .mx-dot em { display: none; } }

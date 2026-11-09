@@ -5,7 +5,7 @@ import { analyze, completeTask, propagate } from './sched.js';
 import { suggestions, dismiss } from './suggest.js';
 import { openTaskEditor } from './editor.js';
 import { slider, bindSliders, info, LV, EN, energyChip, levelChip, projectChip, whenLabel, dueLabel, toast } from './ui.js';
-import { esc, icon, toDateStr } from './util.js';
+import { esc, icon, toDateStr, fmtDuration } from './util.js';
 
 const F = Object.assign({ status: 'open', project: '', energy: '', q: '', sort: 'score', mode: 'list', sugg: true }, local.get('listFilters', {}));
 const activeFilters = () => [F.project, F.energy, F.sort !== 'score' ? 1 : ''].filter(Boolean).length;
@@ -46,6 +46,7 @@ function row(t, an) {
   const flags = [];
   if (a.late) flags.push(`<span class="badge danger" title="Finira après l’échéance">${icon('alert', 13)} Critique</span>`);
   else if (a.critical) flags.push(`<span class="badge warn" title="Sur le chemin critique : aucune marge">Chemin critique</span>`);
+  if (t.automate) flags.push(`<span class="badge accent" title="Candidate à l’automatisation">${icon('sync', 13)} À automatiser</span>`);
   if (t.slips) flags.push(`<span class="badge muted" title="Reportée automatiquement">Reportée ×${t.slips}</span>`);
   return `
     <li class="task-row c-${category(t)} ${t.status === 'done' ? 'done' : ''} ${a.late ? 'is-late' : ''}" data-id="${t.id}">
@@ -57,6 +58,7 @@ function row(t, an) {
           ${projectChip(p)}
           ${t.start ? `<span class="meta">${icon('calendar', 13)} ${esc(whenLabel(t))}</span>` : ''}
           ${t.due ? `<span class="meta ${t.due < toDateStr(new Date()) && t.status !== 'done' ? 'danger-text' : ''}">${esc(dueLabel(t))}</span>` : ''}
+          ${t.estimate ? `<span class="meta" title="Durée estimée">⏱ ${fmtDuration(t.estimate)}</span>` : ''}
           ${t.subtasks.length ? `<span class="meta">${icon('check', 13)} ${subDone}/${t.subtasks.length}</span>` : ''}
           ${del ? `<span class="meta">${icon('user', 13)} ${esc(del.name)}</span>` : ''}
           ${t.recur ? `<span class="meta" title="Récurrente">${icon('repeat', 13)}</span>` : ''}
@@ -193,7 +195,7 @@ function emptyHtml(total) {
 function bind(root, el) {
   root.querySelectorAll('[data-sgsel]').forEach((sel) => sel.addEventListener('change', () => {
     const s = lastSuggestions[Number(sel.dataset.sgsel)]; const a = s?.actions[Number(sel.value)];
-    if (a?.run) { a.run(); toast('C’est noté.'); }
+    if (a?.run) { const m = a.run(); toast(typeof m === 'string' && m ? m : 'C’est noté.'); }
   }));
   root.querySelectorAll('[data-filter]').forEach((inp) => {
     inp.addEventListener(inp.type === 'search' ? 'input' : 'change', () => {
@@ -217,7 +219,7 @@ function bind(root, el) {
       const [i, j] = sga.dataset.sga.split(':').map(Number);
       const s = lastSuggestions[i]; const a = s?.actions[j];
       if (a?.open) openTaskEditor(s.taskId);
-      else if (a?.run) { a.run(); toast('C’est noté.'); }
+      else if (a?.run) { const m = a.run(); toast(typeof m === 'string' && m ? m : 'C’est noté.'); }
       return;
     }
     const sgx = e.target.closest('[data-sgx]');
