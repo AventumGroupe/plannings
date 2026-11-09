@@ -1,0 +1,81 @@
+# Construit l'application Android « Gestion des plannings » et la publie dans « Releases ».
+# La clé de signature vient des secrets SIGNING_KEYSTORE (fichier .jks en base64) et SIGNING_PASSWORD.
+name: APK Gestion des plannings
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+      SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Met en cache Gradle entre deux constructions (moins de téléchargements).
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Installer les dépendances
+        run: npm ci || npm install
+
+      - name: Copier l'application web dans le projet Android
+        run: npm run sync
+
+      - name: Préparer la clé de signature
+        if: env.SIGNING_KEYSTORE != ''
+        run: |
+          echo "$SIGNING_KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Construire l'APK
+        working-directory: android
+        # Jusqu'à 3 tentatives : les téléchargements de Gradle échouent parfois (erreurs réseau passagères).
+        run: |
+          chmod +x gradlew
+          for i in 1 2 3; do
+            ./gradlew assembleRelease --no-daemon && exit 0
+            echo "Tentative $i échouée, nouvel essai dans 30 s…"
+            sleep 30
+          done
+          exit 1
+
+      - name: Renommer l'APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk dist/gestion-plannings.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gestion-plannings-apk
+          path: dist/gestion-plannings.apk
+
+      # Lien de téléchargement direct, uniquement pour les APK signés avec la clé fixe.
+      - name: Publier la version (Release)
+        if: env.SIGNING_KEYSTORE != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.7.${{ github.run_number }}
+          name: Gestion des plannings 1.7.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: dist/gestion-plannings.apk
+          body: |
+            Télécharger **gestion-plannings.apk** ci-dessous, l'ouvrir sur le téléphone puis toucher « Installer » ou « Mettre à jour ».
+            Lien permanent vers la dernière version :
+            https://github.com/${{ github.repository }}/releases/latest/download/gestion-plannings.apk

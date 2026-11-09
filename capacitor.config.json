@@ -1,0 +1,23 @@
+{
+  "appId": "com.aventum.plannings",
+  "appName": "Plannings",
+  "webDir": "www",
+  "backgroundColor": "#f4f6f9",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost",
+    "allowNavigation": [
+      "login.microsoftonline.com",
+      "login.microsoft.com",
+      "login.live.com",
+      "account.live.com",
+      "aadcdn.msauth.net",
+      "aadcdn.msftauth.net",
+      "*.microsoftonline.com",
+      "*.live.com"
+    ]
+  }
+}

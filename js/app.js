@@ -13,7 +13,7 @@ import { notifSupported, notifEnabled, enableNotifications, disableNotifications
 import { toast, confirmDialog, slider, bindSliders, info } from './ui.js';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },

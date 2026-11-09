@@ -1,0 +1,72 @@
+apply plugin: 'com.android.application'
+
+def runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "0").toInteger()
+
+android {
+    namespace = "com.aventum.plannings"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.aventum.plannings"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // numéro de version croissant : le numéro de construction GitHub (0 en local)
+        versionCode runNumber + 100  // au-dessus des versions publiées depuis l’ancien dépôt
+        versionName "1.7." + runNumber
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    // Clé de signature fixe, fournie par les secrets GitHub (jamais stockée dans le dépôt) :
+    // indispensable pour qu'une nouvelle version s'installe par-dessus l'ancienne.
+    def releaseKeystore = System.getenv("SIGNING_KEYSTORE_FILE")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv("SIGNING_PASSWORD")
+                keyAlias "aventum"
+                keyPassword System.getenv("SIGNING_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Sans clé fournie, signé avec la clé de debug pour rester installable.
+            signingConfig releaseKeystore != null ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
