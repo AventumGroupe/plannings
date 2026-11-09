@@ -1,7 +1,7 @@
 // Vue Gantt : projets, barres, dépendances fin -> début, chemin critique,
 // décalage en cascade, vue compacte pour téléphone, export PDF.
 
-import { db, tasks, projects, putTask, save, local, RES_TYPES } from './store.js';
+import { db, tasks, projects, putTask, save, local, RES_TYPES, spentOf } from './store.js';
 import { tStart, tEnd, setSpan, shiftTo, propagate, requiredStart, analyze, wouldCycle } from './sched.js';
 import { openTaskEditor } from './editor.js';
 import { openProjectEditor } from './resources.js';
@@ -63,7 +63,7 @@ function buildRows(gs) {
   return rows;
 }
 
-const progressOf = (t) => t.status === 'done' ? 1 : t.subtasks.length ? t.subtasks.filter((s) => s.done).length / t.subtasks.length : t.status === 'doing' ? 0.3 : 0;
+const progressOf = (t) => t.status === 'done' ? 1 : spentOf(t) && t.estimate ? Math.min(1, spentOf(t) / t.estimate) : t.subtasks.length ? t.subtasks.filter((s) => s.done).length / t.subtasks.length : t.status === 'doing' ? 0.3 : 0;
 
 // ---------- Rendu complet (ordinateur, impression) ----------
 function ganttHtml(rows, an, from, to, { dayW, nameW, print = false }) {

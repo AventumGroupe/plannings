@@ -104,6 +104,21 @@ export const projects = () => Object.values(db.projects).sort((a, b) => a.name.l
 export const resources = () => Object.values(db.resources).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
 export const people = () => resources().filter((r) => r.type === 'personne');
 
+/** Temps passé (minutes) = somme du temps des sous-tâches. */
+export const spentOf = (t) => (t.subtasks || []).reduce((m, s) => m + (Number(s.spent) || 0), 0);
+/** Charge restante (minutes). */
+export const remainingOf = (t) => Math.max(0, (t.estimate || 0) - spentOf(t));
+/** « 1h30 », « 1 h 30 », « 90 » (minutes), « 1,5 » (heures) -> minutes */
+export function parseDuration(str) {
+  const s = String(str || '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!s) return 0;
+  let m = s.match(/^(\d+(?:[.,]\d+)?)h(\d{1,2})?(?:min)?$/);
+  if (m) return Math.round(parseFloat(m[1].replace(',', '.')) * 60 + (m[2] ? Number(m[2]) : 0));
+  m = s.match(/^(\d+)(?:min|mn|m)$/);
+  if (m) return Number(m[1]);
+  if (/[.,]/.test(s)) return Math.round(parseFloat(s.replace(',', '.')) * 60) || 0;
+  return Number(s) || 0;
+}
 export const score = (t) => t.importance * 2 + t.urgency; // de 3 à 15
 const CAT_COLLAB = {
   deleguer: { label: 'Au meilleur moment', hint: 'Urgentes et importantes mais plombantes : sur un créneau d’énergie haute (le matin), sans enchaîner deux tâches plombantes.', short: 'Meilleur moment' },

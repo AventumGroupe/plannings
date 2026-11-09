@@ -2,14 +2,14 @@
 
 import {
   db, tasks, projects, resources, people, newTask, putTask, removeTask, save, newProject, putProject,
-  newResource, putResource, STATUS, ENERGY, RES_TYPES, category, CATEGORIES, catInfo, isLeader,
+  newResource, putResource, STATUS, ENERGY, RES_TYPES, category, CATEGORIES, catInfo, isLeader, spentOf, parseDuration,
 } from './store.js';
 import { tStart, tEnd, setSpan, shiftTo, requiredStart, propagate, succsOf, completeTask, proposeSlot, RECUR } from './sched.js';
 import { openDialog, confirmDialog, toast, slider, bindSliders, info, LV, EN } from './ui.js';
 import { adviceHtml, runAdvice } from './advice.js';
 import { esc, icon, uid, parse, toLocal, toDateStr, addMinutes, fmt, cap, fmtDuration, MIN } from './util.js';
 
-const DURATIONS = [2, 5, 10, 15, 25, 30, 45, 50, 60, 90, 120, 180, 240, 300, 360, 480];
+const DURATIONS = [2, 5, 10, 15, 25, 30, 45, 50, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000, 3600, 4800, 6000, 7200, 9600, 12000];
 const REMINDERS = [[null, 'Aucun'], [0, 'À l’heure'], [5, '5 min avant'], [15, '15 min avant'], [30, '30 min avant'], [60, '1 h avant'], [120, '2 h avant'], [1440, 'La veille']];
 const WEEKDAYS = [[1, 'L'], [2, 'M'], [3, 'M'], [4, 'J'], [5, 'V'], [6, 'S'], [0, 'D']];
 
@@ -95,7 +95,8 @@ export function openTaskEditor(idOrPreset = null) {
         <label class="field"><span>Début</span><input type="${type}" data-f="start" value="${esc(sVal)}"></label>
         <label class="field"><span>Fin</span><input type="${type}" data-f="end" value="${esc(eVal)}"></label>
       </div>
-      ${slider('estimate', { label: 'Durée estimée', values: durs, labels: durs.map(fmtDuration), value: d.estimate, ticks: false })}`;
+      ${slider('estimate', { label: 'Charge totale (travail réel)', values: durs, labels: durs.map(fmtDuration), value: d.estimate, ticks: false, infoKey: 'charge' })}
+      <label class="field inline-dur"><span>ou saisir</span><input type="text" data-estimate-txt value="${esc(fmtDuration(d.estimate))}" placeholder="ex. 12h ou 1h30"></label>`;
   }
 
   function depsHtml() {
@@ -144,15 +145,25 @@ export function openTaskEditor(idOrPreset = null) {
   }
 
   function subHtml() {
-    const done = d.subtasks.filter((s) => s.done).length;
+    const done = d.subtasks.filter((x) => x.done).length;
+    const spent = spentOf(d);
+    const est = d.estimate || 0;
+    const pct = est && spent ? Math.min(100, (spent / est) * 100) : d.subtasks.length ? (done / d.subtasks.length) * 100 : 0;
     return `
-      ${d.subtasks.length ? `<div class="progress" title="${done}/${d.subtasks.length}"><i style="width:${(done / d.subtasks.length) * 100}%"></i></div>` : ''}
-      <ul class="subtasks">${d.subtasks.map((s) => `
-        <li><input type="checkbox" data-subdone="${s.id}" ${s.done ? 'checked' : ''} aria-label="Fait">
-          <input type="text" value="${esc(s.title)}" data-subtitle="${s.id}" aria-label="Sous-tâche">
-          <button type="button" class="x" data-rmsub="${s.id}" aria-label="Supprimer">${icon('close', 14)}</button></li>`).join('')}
+      ${d.subtasks.length || spent ? `<div class="sub-sum">${spent ? `<b>${fmtDuration(spent)}</b> passées${est ? ` sur ${fmtDuration(est)} · reste ${fmtDuration(Math.max(0, est - spent))}` : ''}` : ''}${d.subtasks.length ? ` · ${done}/${d.subtasks.length} faites` : ''}</div>
+        <div class="progress ${est && spent > est ? 'over' : ''}"><i style="width:${pct}%"></i></div>` : ''}
+      <ul class="subtasks">${d.subtasks.map((x) => `
+        <li><input type="checkbox" data-subdone="${x.id}" ${x.done ? 'checked' : ''} aria-label="Fait">
+          <input type="text" value="${esc(x.title)}" data-subtitle="${x.id}" aria-label="Sous-tâche">
+          <input type="text" class="sub-spent" value="${x.spent ? esc(fmtDuration(x.spent)) : ''}" data-subspent="${x.id}" placeholder="temps" aria-label="Temps passé" title="Temps passé (ex. 1h30, 45, 2,5)">
+          <button type="button" class="x" data-rmsub="${x.id}" aria-label="Supprimer">${icon('close', 14)}</button></li>`).join('')}
       </ul>
-      <div class="row gap"><input type="text" data-newsub placeholder="Nouvelle sous-tâche"><button type="button" class="btn ghost sm" data-act="addsub">${icon('plus', 16)}</button></div>`;
+      <div class="row gap sub-new">
+        <input type="text" data-newsub placeholder="Nouvelle sous-tâche">
+        <input type="text" class="sub-spent" data-newspent placeholder="temps passé" title="Si déjà réalisée : temps passé (ex. 1h30)">
+        <button type="button" class="btn ghost sm" data-act="addsub">${icon('plus', 16)}</button>
+      </div>
+      <p class="hint">Déjà réalisée ? Indiquez le temps passé : elle est ajoutée comme faite et décomptée de la charge restante.</p>`;
   }
 
   function recurHtml() {
@@ -225,7 +236,10 @@ export function openTaskEditor(idOrPreset = null) {
 
   const { el, close } = openDialog({ title: isNew ? 'Nouvelle tâche' : 'Modifier la tâche', body: bodyHtml(), footer, wide: true });
   const body = el.querySelector('.sheet-body');
-  const part = (name, html) => { body.querySelector(`[data-part="${name}"]`).innerHTML = html; };
+  const part = (name, html) => {
+    body.querySelector(`[data-part="${name}"]`).innerHTML = html;
+    if (name === 'sub') body.querySelector('[data-part="advice"]').innerHTML = adviceHtml(d); // le temps passé change le reste à faire
+  };
   if (isNew) setTimeout(() => body.querySelector('[data-f="title"]').focus(), 50);
 
   function setStart(v) {
@@ -251,10 +265,13 @@ export function openTaskEditor(idOrPreset = null) {
     else if (name === 'reminder') d.reminder = v;
     else if (name === 'estimate') {
       d.estimate = Number(v);
-      if (d.start && !d.allDay) {
+      const sameDayBlock = d.start && !d.allDay && d.end && d.end.slice(0, 10) === d.start.slice(0, 10) && d.estimate <= 12 * 60;
+      if (sameDayBlock) {
         d.end = toLocal(addMinutes(parse(d.start), d.estimate));
         const e = body.querySelector('[data-f="end"]'); if (e) e.value = d.end;
       }
+      const tx = body.querySelector('[data-estimate-txt]'); if (tx) tx.value = fmtDuration(d.estimate);
+      if (final) part('sub', subHtml());
     } else if (name === 'recurFreq') {
       d.recur = v ? { ...(d.recur || {}), freq: v, interval: d.recur?.interval || 1, days: d.recur?.days || [] } : null;
       if (final || !v || !body.querySelector('[data-sld="recurInterval"]')) part('recur', recurHtml());
@@ -298,7 +315,8 @@ export function openTaskEditor(idOrPreset = null) {
       if (!t.value) { d.end = d.start; }
       else d.end = d.allDay ? t.value + 'T00:00' : t.value;
       if (d.start && d.end < d.start) d.end = d.start;
-      if (!d.allDay && d.start) d.estimate = Math.max(15, Math.round((parse(d.end) - parse(d.start)) / MIN));
+      // La charge n'est déduite de la période que pour un bloc de moins de 12 h dans la même journée
+      if (!d.allDay && d.start && d.end.slice(0, 10) === d.start.slice(0, 10) && parse(d.end) - parse(d.start) <= 12 * 60 * MIN) d.estimate = Math.max(15, Math.round((parse(d.end) - parse(d.start)) / MIN));
       part('planning', planningHtml());
     } else if (f === 'due') d.due = t.value || null;
     else if (f === 'delegate') d.delegate = t.value || null;
@@ -318,9 +336,16 @@ export function openTaskEditor(idOrPreset = null) {
         return;
       } else d.assign.push({ id: t.value, qty: null });
       part('res', resHtml());
+    } else if (t.dataset.subspent) {
+      const x = d.subtasks.find((y) => y.id === t.dataset.subspent);
+      if (x) { x.spent = parseDuration(t.value); if (x.spent && !x.done) { x.done = true; x.doneAt = Date.now(); } }
+      part('sub', subHtml());
+    } else if (t.matches('[data-estimate-txt]')) {
+      const m = parseDuration(t.value);
+      if (m > 0) { d.estimate = m; part('planning', planningHtml()); part('advice', adviceHtml(d)); part('sub', subHtml()); }
     } else if (t.dataset.subdone) {
       const s = d.subtasks.find((x) => x.id === t.dataset.subdone);
-      if (s) s.done = t.checked;
+      if (s) { s.done = t.checked; s.doneAt = t.checked ? Date.now() : null; }
       part('sub', subHtml());
     } else if (t.dataset.recur) {
       const k = t.dataset.recur;
@@ -333,12 +358,13 @@ export function openTaskEditor(idOrPreset = null) {
     const inp = body.querySelector('[data-newsub]');
     const v = inp.value.trim();
     if (!v) return;
-    d.subtasks.push({ id: uid(), title: v, done: false });
+    const spent = parseDuration(body.querySelector('[data-newspent]').value);
+    d.subtasks.push({ id: uid(), title: v, done: spent > 0, spent: spent || 0, doneAt: spent > 0 ? Date.now() : null });
     part('sub', subHtml());
     body.querySelector('[data-newsub]').focus();
   };
   body.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.matches('[data-newsub]')) { e.preventDefault(); addSub(); }
+    if (e.key === 'Enter' && e.target.matches('[data-newsub], [data-newspent]')) { e.preventDefault(); addSub(); }
     if (e.key === 'Enter' && e.target.dataset.f === 'title') { e.preventDefault(); }
   });
 

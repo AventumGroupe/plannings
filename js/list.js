@@ -1,6 +1,6 @@
 // Écran principal : la liste des tâches, la saisie rapide et les propositions.
 
-import { db, tasks, projects, newTask, putTask, removeTask, save, local, score, category, CATEGORIES, catInfo, isLeader, ENERGY, people } from './store.js';
+import { db, tasks, projects, newTask, putTask, removeTask, save, local, score, category, CATEGORIES, catInfo, isLeader, ENERGY, people, spentOf } from './store.js';
 import { analyze, completeTask, propagate } from './sched.js';
 import { suggestions, dismiss } from './suggest.js';
 import { openTaskEditor } from './editor.js';
@@ -60,7 +60,7 @@ function row(t, an) {
           ${projectChip(p)}
           ${t.start ? `<span class="meta">${icon('calendar', 13)} ${esc(whenLabel(t))}</span>` : ''}
           ${t.due ? `<span class="meta ${t.due < toDateStr(new Date()) && t.status !== 'done' ? 'danger-text' : ''}">${esc(dueLabel(t))}</span>` : ''}
-          ${t.estimate ? `<span class="meta" title="Durée estimée">⏱ ${fmtDuration(t.estimate)}</span>` : ''}
+          ${t.estimate ? `<span class="meta" title="Temps passé / charge totale">⏱ ${spentOf(t) ? `${fmtDuration(spentOf(t))} / ` : ''}${fmtDuration(t.estimate)}</span>` : ''}
           ${t.subtasks.length ? `<span class="meta">${icon('check', 13)} ${subDone}/${t.subtasks.length}</span>` : ''}
           ${del ? `<span class="meta">${icon('user', 13)} ${esc(del.name)}</span>` : ''}
           ${t.recur ? `<span class="meta" title="Récurrente">${icon('repeat', 13)}</span>` : ''}

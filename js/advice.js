@@ -4,7 +4,7 @@
 // Csikszentmihalyi (flow), Leroy (résidu attentionnel), Albulescu et al. (micro-pauses),
 // Schmidt et al. / Pink (rythme de la journée), Loehr & Schwartz (énergie), Gollwitzer (intentions « si… alors… »).
 
-import { db, tasks, newTask, putTask, save, people, category, catInfo, isLeader } from './store.js';
+import { db, tasks, newTask, putTask, save, people, category, catInfo, isLeader, spentOf, remainingOf } from './store.js';
 import { proposeSlot, findFreeSlot, setSpan, tStart, tEnd, propagate, completeTask } from './sched.js';
 import { esc, icon, fmt, cap, fmtDuration, addDays, addMinutes, startOfDay, MIN } from './util.js';
 
@@ -29,7 +29,7 @@ const brk = () => db.settings.breakMin || 5;
 
 /** Rythme conseillé pour une tâche. */
 export function rhythmOf(t) {
-  const d = t.estimate || 60, s = sessionOf(t), n = Math.max(1, Math.ceil(d / s));
+  const d = (spentOf(t) ? remainingOf(t) : t.estimate) || 60, s = sessionOf(t), n = Math.max(1, Math.ceil(d / s));
   if (d <= 2) return { kind: 'now', n: 1, s: d, text: 'Moins de 2 minutes : faites-la tout de suite plutôt que de la planifier.', src: 'Allen' };
   if (d < 15) return { kind: 'small', n: 1, s: d, text: 'Petite tâche : regroupez-la avec d’autres dans un créneau « petites tâches », idéalement dans le creux de début d’après-midi.', src: 'Allen, Newport, Pink' };
   if (d <= s) return { kind: 'one', n: 1, s: d, text: `Une seule séance de ${fmtDuration(d)}.`, src: 'Cirillo' };
@@ -98,7 +98,7 @@ export function adviceHtml(t) {
   const { r, cat, opts } = adviceFor(t);
   return `
     <div class="adv">
-      <div class="adv-head c-${cat}"><i class="grp-dot"></i><b>${esc(catInfo(cat).label)}</b><span>${esc(fmtDuration(t.estimate || 60))}</span></div>
+      <div class="adv-head c-${cat}"><i class="grp-dot"></i><b>${esc(catInfo(cat).label)}</b><span>${spentOf(t) ? `reste ${esc(fmtDuration(remainingOf(t)))} / ${esc(fmtDuration(t.estimate || 0))}` : esc(fmtDuration(t.estimate || 60))}</span></div>
       <p class="adv-rhythm">${icon('repeat', 14)} ${esc(r.text)} <small>(${esc(r.src)})</small></p>
       <ol class="adv-opts">${opts.map((o) => `
         <li><b>${esc(o.title)}</b><p>${esc(o.text)}</p><small class="muted">Source : ${esc(o.src)}</small>
@@ -146,7 +146,7 @@ export function batchSmall(list) {
 export function planSessions(t, { spread = false } = {}) {
   const S = db.settings;
   const plomb = t.energy <= 2;
-  const s = sessionOf(t), total = t.estimate || 60, n = Math.max(1, Math.ceil(total / s));
+  const s = sessionOf(t), total = (spentOf(t) ? remainingOf(t) : t.estimate) || 60, n = Math.max(1, Math.ceil(total / s));
   const place = (task, from, sameDayAfter) => {
     let slot = null;
     if (sameDayAfter) {

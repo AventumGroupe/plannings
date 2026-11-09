@@ -152,7 +152,7 @@ export function suggestions(analysis = analyze()) {
   // 6f. Plafond d'environ 4 h de travail concentré par jour (Ericsson)
   for (let i = 0; i < 5; i++) {
     const d = addDays(startOfDay(now), i);
-    const focus = open.filter((t) => t.start && !t.allDay && (t.estimate || 60) >= 25 && sameDay(tStart(t), d));
+    const focus = open.filter((t) => t.start && !t.allDay && (t.estimate || 60) >= 25 && sameDay(tStart(t), d) && sameDay(tStart(t), new Date(tEnd(t) - 1)));
     const h = focus.reduce((x, t) => x + (tEnd(t) - tStart(t)) / HOUR, 0);
     if (h > 4) {
       push({ key: `focus:${d.toDateString()}`, kind: 'focus', tone: 'warn', title: 'Plus de 4 h de concentration',
@@ -184,7 +184,7 @@ export function suggestions(analysis = analyze()) {
   // 6. Journée trop plombante
   for (let i = 0; i < 5; i++) {
     const d = addDays(startOfDay(now), i);
-    const heavy = open.filter((t) => t.start && !t.allDay && t.energy <= 2 && sameDay(tStart(t), d));
+    const heavy = open.filter((t) => t.start && !t.allDay && t.energy <= 2 && sameDay(tStart(t), d) && sameDay(tStart(t), new Date(tEnd(t) - 1)));
     const hours = heavy.reduce((h, t) => h + (tEnd(t) - tStart(t)) / HOUR, 0);
     if (hours >= (isLeader() ? 4 : 2.5)) {
       push({

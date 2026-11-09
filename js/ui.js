@@ -141,6 +141,7 @@ export const INFO = {
   sauvegarde: `L’import fusionne le fichier avec vos données (la version la plus récente de chaque élément gagne).`,
   installer: `Android (Chrome) : menu ⋮ → « Installer l’application ». Ordinateur (Chrome / Edge) : icône d’installation dans la barre d’adresse. Fonctionne ensuite hors connexion.`,
   profil: `<b>Dirigeant</b> : les tâches plombantes peuvent être déléguées ou automatisées.<br><b>Collaborateur</b> : pas de délégation ; l’application cherche des moments propices : le matin (les plus plombantes en tout début de journée), jamais deux tâches plombantes d’affilée, 2 h 30 de plombant au plus par jour, des séances courtes, puis une tâche dynamisante pour récupérer.`,
+  charge: `<b>Charge totale</b> : le temps de travail réel, indépendant des dates. Une tâche peut s’étaler sur 21 jours pour 10 h de travail. Le temps passé (saisi sur les sous-tâches) est décompté : les séances et les conseils portent sur ce qui reste.`,
   projet: `Une tâche qui finirait après l’échéance du projet passe en rouge dans le Gantt.`,
 };
 

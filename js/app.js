@@ -17,7 +17,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus (Cirillo, Albulescu). Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min dans le flow (Kleitman, Csikszentmihalyi). Au-delà d’environ 4 h de travail concentré par jour, l’attention chute (Ericsson).';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.0.1';
+const VERSION = '2.1.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
