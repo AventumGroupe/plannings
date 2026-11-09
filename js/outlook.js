@@ -50,8 +50,9 @@ export const isConnected = () => !!account;
 export const accountLabel = () => account ? (account.name ? `${account.name} (${account.username})` : account.username) : '';
 
 class GraphError extends Error {
-  constructor(status, msg) { super(msg); this.status = status; }
+  constructor(status, msg, code = '', path = '') { super(msg); this.status = status; this.code = code; this.path = path; }
 }
+let step = '';
 
 // L'annuaire de l'entreprise est déduit du domaine de l'adresse (fonctionne aussi si l'application
 // n'est inscrite que pour l'annuaire de l'entreprise).
@@ -124,9 +125,9 @@ async function graph(path, { method = 'GET', body, headers = {} } = {}) {
   if (body !== undefined) h['Content-Type'] = 'application/json';
   const res = await fetch(url, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
   if (!res.ok) {
-    let msg = res.statusText;
-    try { const j = await res.json(); msg = j.error?.message || msg; } catch {}
-    throw new GraphError(res.status, msg);
+    let msg = res.statusText, code = '';
+    try { const j = await res.json(); msg = j.error?.message || msg; code = j.error?.code || ''; } catch {}
+    throw new GraphError(res.status, msg, code, `${method} ${url.replace(GRAPH, '').split('?')[0].replace(/\/[A-Za-z0-9=_-]{20,}/g, '/…')}`);
   }
   if (res.status === 204) return null;
   const ct = res.headers.get('content-type') || '';
@@ -150,7 +151,8 @@ function messageOf(e) {
   if (e.status === 401 || e.status === 403) return 'Accès refusé par Microsoft : vérifiez les autorisations de l’application (Calendars.ReadWrite, Tasks.ReadWrite).';
   if (e.errorCode === 'user_cancelled') return 'Connexion annulée.';
   if (!navigator.onLine) return 'Hors connexion : la synchronisation reprendra automatiquement.';
-  return e.message || String(e);
+  const where = [step, e.path].filter(Boolean).join(' · ');
+  return `${e.message || String(e)}${e.code ? ` [${e.code}]` : ''}${where ? ` — ${where}` : ''}`;
 }
 
 export async function listCalendars() {
@@ -174,13 +176,15 @@ export function syncAll({ manual = false } = {}) {
     setStatus({ state: 'syncing', error: null, detail: 'Exchange…' });
     try {
       const stats = { pulled: 0, pushed: 0, removed: 0 };
-      const listId = await ensureList();
+      step = 'Liste To Do'; const listId = await ensureList();
       const now = new Date();
       const from = addDays(startOfDay(now), -PAST_DAYS);
       const to = addDays(startOfDay(now), FUTURE_DAYS);
 
       // 1. Lecture : données générales, tâches To Do, rendez-vous
-      const [meta, todos, events] = await Promise.all([readMeta(listId), readTodos(listId), readEvents(from, to)]);
+      step = 'Lecture des réglages'; const meta = await readMeta(listId);
+      step = 'Lecture des tâches To Do'; const todos = await readTodos(listId);
+      step = 'Lecture de l’agenda'; const events = await readEvents(from, to);
 
       // 2. Fusion (pour chaque élément, la version la plus récente gagne)
       const remote = { tasks: {}, projects: meta?.projects || {}, resources: meta?.resources || {}, deleted: meta?.deleted || {}, settings: meta?.settings };
@@ -191,16 +195,17 @@ export function syncAll({ manual = false } = {}) {
 
       // 3. Modifications faites directement dans To Do / Outlook
       setStatus({ detail: 'To Do…' });
-      stats.pulled += applyTodoEdits(todos, listId);
+      step = 'Fusion'; stats.pulled += applyTodoEdits(todos, listId);
       setStatus({ detail: 'Agenda…' });
       stats.pulled += await applyEventEdits(events.ours);
       local.set('outlookEvents', events.external);
 
       // 4. Envoi
-      stats.pushed += await pushEvents(from, stats);
-      stats.pushed += await pushTodos(listId, stats);
-      await pushDeleted(stats);
-      await writeMeta(listId, meta);
+      step = 'Envoi vers l’agenda'; stats.pushed += await pushEvents(from, stats);
+      step = 'Envoi vers To Do'; stats.pushed += await pushTodos(listId, stats);
+      step = 'Suppressions'; await pushDeleted(stats);
+      step = 'Enregistrement des réglages'; await writeMeta(listId, meta);
+      step = '';
 
       save('sync');
       const t = Date.now();
@@ -223,10 +228,10 @@ export function syncAll({ manual = false } = {}) {
 async function ensureList() {
   const cached = local.get('todoListId');
   if (cached) {
-    const ok = await ignore404(graph(`/me/todo/lists/${cached}?$select=id`));
+    const ok = await ignore404(graph(`/me/todo/lists/${cached}`));
     if (ok) return cached;
   }
-  const lists = await pages('/me/todo/lists?$select=id,displayName');
+  const lists = await pages('/me/todo/lists');
   let list = lists.find((l) => l.displayName === LIST_NAME);
   if (!list) list = await graph('/me/todo/lists', { method: 'POST', body: { displayName: LIST_NAME } });
   local.set('todoListId', list.id);
@@ -259,13 +264,29 @@ async function upsertExt(base, name, data) {
 }
 
 async function readTodos(listId) {
-  const items = await pages(`/me/todo/lists/${listId}/tasks?$top=100&$expand=extensions`);
-  return items.map((it) => {
-    const ext = findExt(it.extensions, EXT_TASK);
+  const base = `/me/todo/lists/${listId}/tasks`;
+  let items, expanded = true;
+  try { items = await pages(`${base}?$expand=extensions`); }
+  catch (e) {
+    if (e.status !== 400 && e.status !== 501) throw e;
+    // Repli : liste simple, puis fiche (extension) de chaque tâche modifiée depuis la dernière lecture
+    expanded = false;
+    items = await pages(base);
+  }
+  const out = [];
+  for (const it of items) {
+    let exts = it.extensions;
+    if (!expanded) {
+      const known = tasks().find((t) => t.todo?.id === it.id);
+      if (known && known.todo.remoteMod === it.lastModifiedDateTime) { out.push({ item: it, data: null }); continue; }
+      exts = (await pages(`${base}/${it.id}/extensions`).catch(() => []));
+    }
+    const ext = findExt(exts, EXT_TASK);
     let data = null;
     try { data = ext?.data ? JSON.parse(ext.data) : null; } catch {}
-    return { item: it, data };
-  });
+    out.push({ item: it, data });
+  }
+  return out;
 }
 
 const todoStatus = (t) => (t.status === 'done' ? 'completed' : t.status === 'doing' ? 'inProgress' : 'notStarted');
@@ -289,8 +310,8 @@ function todoPayload(t) {
     importance: todoImportance(t),
     body: { contentType: 'text', content: lines.join('\n') },
     categories: [CATEGORY],
-    dueDateTime: due ? { dateTime: `${due}T00:00:00`, timeZone: TZ } : null,
   };
+  if (due) body.dueDateTime = { dateTime: `${due}T00:00:00`, timeZone: TZ };
   if (due && t.reminder != null && t.status !== 'done') {
     const r = parse(due); r.setHours(db.settings.dayStart, 0, 0, 0);
     if (t.reminder >= 1440) r.setDate(r.getDate() - 1);
@@ -353,7 +374,7 @@ async function pushTodos(listId, stats) {
         const created = await graph(base, { method: 'POST', body: todoPayload(t) });
         t.todo = { id: created.id, remoteMod: null, syncedAt: 0 };
         await upsertExt(`${base}/${created.id}/extensions`, EXT_TASK, packTask(t));
-        const fresh = await graph(`${base}/${created.id}?$select=id,lastModifiedDateTime`);
+        const fresh = await graph(`${base}/${created.id}`);
         t.todo = { id: created.id, remoteMod: fresh.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
         putTask(t, { silent: true, touch: false });
         n++;
