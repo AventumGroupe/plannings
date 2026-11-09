@@ -35,7 +35,7 @@ function setStatus(p) { Object.assign(status, p); listeners.forEach((f) => f(get
 
 // Identifiant de l'application inscrite une fois par l'administrateur Microsoft 365 de l'entreprise.
 // Une fois renseigné ici, chaque salarié n'a qu'à se connecter avec son adresse Office 365.
-export const BUILTIN_CLIENT_ID = '';
+export const BUILTIN_CLIENT_ID = 'cd336ff4-1413-4ef2-bef5-1f8c9b55c254';
 export const clientId = () => local.get('msClientId', '') || BUILTIN_CLIENT_ID;
 export const hasClientId = () => !!clientId();
 export const lastEmail = () => local.get('msEmail', '');
