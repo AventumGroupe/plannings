@@ -42,7 +42,10 @@ export const lastEmail = () => local.get('msEmail', '');
 export const setClientId = (v) => local.set('msClientId', (v || '').trim());
 export const calendarId = () => local.get('msCalendarId', '');
 export const setCalendarId = (v) => local.set('msCalendarId', v || '');
-export const redirectUri = () => new URL('./', location.href).href;
+// Dans l'application Android, Microsoft renvoie vers une page relais du site web, qui rebascule vers l'application.
+export const NATIVE_REDIRECT = 'https://aventumgroupe.github.io/plannings/auth-android.html';
+const isNative = () => !!window.Capacitor?.isNativePlatform?.();
+export const redirectUri = () => (isNative() ? NATIVE_REDIRECT : new URL('./', location.href).href);
 export const isConnected = () => !!account;
 export const accountLabel = () => account ? (account.name ? `${account.name} (${account.username})` : account.username) : '';
 

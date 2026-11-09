@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connexion… – Plannings</title>
+<style>body{font:16px system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f4f6f9;color:#19212c}</style>
+</head><body><p>Connexion en cours…</p>
+<script>
+// Relais de connexion Microsoft pour l'application Android :
+// Android n'intercepte pas une redirection serveur vers https://localhost, mais intercepte une navigation lancée par une page.
+// On renvoie donc immédiatement la réponse de Microsoft (#code=…) vers l'application.
+location.replace('https://localhost/' + location.search + location.hash);
+</script></body></html>

@@ -17,7 +17,8 @@
       "aadcdn.msauth.net",
       "aadcdn.msftauth.net",
       "*.microsoftonline.com",
-      "*.live.com"
+      "*.live.com",
+      "aventumgroupe.github.io"
     ]
   }
 }

@@ -14,7 +14,7 @@ import { notifSupported, notifEnabled, enableNotifications, disableNotifications
 import { toast, confirmDialog, slider, bindSliders, info } from './ui.js';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '1.9.0';
+const VERSION = '1.9.1';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
@@ -203,7 +203,7 @@ function renderSettings(el) {
             <ol>
               <li><b>entra.microsoft.com</b> → Applications → Inscriptions d’applications → Nouvelle inscription, nom <i>Plannings</i>.</li>
               <li>Comptes : <b>cet annuaire uniquement</b> (salariés de l’entreprise) ou <b>organisationnels et personnels</b>.</li>
-              <li>Plateforme <b>Application monopage (SPA)</b>, deux URI de redirection : <code class="copy" data-copy="https://aventumgroupe.github.io/plannings/">https://aventumgroupe.github.io/plannings/</code> et <code class="copy" data-copy="https://localhost/">https://localhost/</code> (application Android).</li>
+              <li>Plateforme <b>Application monopage (SPA)</b>, deux URI de redirection : <code class="copy" data-copy="https://aventumgroupe.github.io/plannings/">https://aventumgroupe.github.io/plannings/</code> et <code class="copy" data-copy="https://aventumgroupe.github.io/plannings/auth-android.html">https://aventumgroupe.github.io/plannings/auth-android.html</code> (application Android).</li>
               <li>Autorisations Microsoft Graph (déléguées) : <code>Calendars.ReadWrite</code> <code>Tasks.ReadWrite</code> <code>User.Read</code>, puis « Accorder un consentement d’administrateur ».</li>
               <li>Transmettre l’<b>ID d’application (client)</b> pour qu’il soit intégré à l’application, ou le coller ci-dessous en attendant.</li>
             </ol>
