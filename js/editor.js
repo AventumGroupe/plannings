@@ -7,6 +7,7 @@ import {
 import { tStart, tEnd, setSpan, shiftTo, requiredStart, propagate, succsOf, completeTask, proposeSlot, RECUR } from './sched.js';
 import { openDialog, confirmDialog, toast, slider, bindSliders, info, LV, EN } from './ui.js';
 import { adviceHtml, runAdvice } from './advice.js';
+import { delegateTo, nudgeHref } from './delegation.js';
 import { esc, icon, uid, parse, toLocal, toDateStr, addMinutes, addDays, fmt, cap, fmtDuration, MIN } from './util.js';
 
 const DURATIONS = [2, 5, 10, 15, 25, 30, 45, 50, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000, 3600, 4800, 6000, 7200, 9600, 12000];
@@ -78,6 +79,16 @@ export function openTaskEditor(idOrPreset = null) {
 
   const taskTitle = (id) => db.tasks[id]?.title || '(sans titre)';
   const optTask = (t) => `<option value="${t.id}">${esc(t.title || '(sans titre)')}${t.projectId && db.projects[t.projectId] ? ` — ${esc(db.projects[t.projectId].name)}` : ''}</option>`;
+
+  function delegHtml() {
+    if (!d.delegate) return '';
+    const n = (d.nudges || []).length;
+    return `<div class="row gap-sm wrap deleg-row">
+      <label class="field"><span>Retour attendu</span><input type="date" data-f="followUp" value="${esc(d.followUp || '')}"></label>
+      <a class="btn sm ghost" href="${nudgeHref(d)}">${icon('bell', 14)} Relancer</a>
+      ${d.delegatedAt ? `<small class="muted">Confiée le ${fmt.dateShort.format(new Date(d.delegatedAt))}${n ? ` · ${n} relance${n > 1 ? 's' : ''}` : ''}</small>` : ''}
+    </div>`;
+  }
 
   function planningHtml() {
     const sVal = d.start ? (d.allDay ? d.start.slice(0, 10) : d.start) : '';
@@ -213,6 +224,7 @@ export function openTaskEditor(idOrPreset = null) {
         <summary>${icon('bell', 18)} <span>${isLeader() ? 'Rappel et délégation' : 'Rappel'}</span><span class="caret">${icon('chevR', 14)}</span></summary>
         ${slider('reminder', { label: 'Rappel', values: remIdx, labels: REMINDERS.map((r) => r[1]), value: d.reminder, ticks: false })}
         <label class="field" ${isLeader() ? '' : 'hidden'}><span>Déléguée à</span><select data-f="delegate"><option value="">Moi</option>${people().map((p) => `<option value="${p.id}" ${d.delegate === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+        <div data-part="deleg">${delegHtml()}</div>
       </details>
       ${sec('deps', 'link', 'Dépendances', nDep, depsHtml(), 'dependances', nDep > 0)}
       ${sec('res', 'people', 'Ressources', nRes, resHtml(), 'ressources', nRes > 0)}
@@ -320,7 +332,8 @@ export function openTaskEditor(idOrPreset = null) {
       if (!d.allDay && d.start && d.end.slice(0, 10) === d.start.slice(0, 10) && parse(d.end) - parse(d.start) <= 12 * 60 * MIN) d.estimate = Math.max(15, Math.round((parse(d.end) - parse(d.start)) / MIN));
       part('planning', planningHtml());
     } else if (f === 'due') d.due = t.value || null;
-    else if (f === 'delegate') d.delegate = t.value || null;
+    else if (f === 'delegate') { delegateTo(d, t.value || null, { save: false }); part('deleg', delegHtml()); }
+    else if (f === 'followUp') d.followUp = t.value || null;
     else if (f === 'projectId') {
       if (t.value === '__new') {
         const refill = () => { t.innerHTML = `<option value="">Sans projet</option>${projects().map((p) => `<option value="${p.id}" ${d.projectId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}<option value="__new">＋ Nouveau projet…</option>`; };

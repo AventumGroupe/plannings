@@ -4,7 +4,7 @@ const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/sched.js', './js/util.js', './js/ui.js', './js/list.js',
   './js/editor.js', './js/calendar.js', './js/gantt.js', './js/resources.js', './js/suggest.js',
-  './js/drag.js', './js/outlook.js', './js/notify.js', './js/matrix.js', './js/github.js', './js/advice.js', './js/pert.js', './js/templates.js',
+  './js/drag.js', './js/outlook.js', './js/notify.js', './js/matrix.js', './js/github.js', './js/advice.js', './js/pert.js', './js/templates.js', './js/delegation.js',
   './vendor/msal-browser.min.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/badge-96.png',
 ];

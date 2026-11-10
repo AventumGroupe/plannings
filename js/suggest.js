@@ -4,6 +4,7 @@
 import { db, tasks, putTask, save, local, people, score, category, isLeader } from './store.js';
 import { tStart, tEnd, setSpan, proposeSlot, analyze, propagate, findFreeSlot } from './sched.js';
 import { fmt, cap, sameDay, addDays, startOfDay, toDateStr, fmtDuration, MIN, HOUR } from './util.js';
+import { delegateTo, followUpDue, nudgeHref, recordNudge } from './delegation.js';
 import { sessionOf, planSessions, batchSmall, rhythmOf } from './advice.js';
 
 const DISMISS_DAYS = 7;
@@ -57,8 +58,23 @@ export function suggestions(analysis = analyze()) {
     }
   }
 
+  // 1b. Délégations à relancer
+  for (const t of followUpDue().slice(0, 4)) {
+    const p = db.resources[t.delegate];
+    push({
+      key: `nudge:${t.id}:${t.followUp}`, kind: 'nudge', tone: 'warn', taskId: t.id,
+      title: `Faire le point avec ${p.name}`,
+      text: `Le retour sur « ${t.title} » était attendu ${t.followUp < toDateStr(now) ? 'le ' + fmt.dateShort.format(new Date(t.followUp + 'T00:00')) : 'aujourd’hui'}.`,
+      actions: [
+        { label: 'Relancer par e-mail', run: () => { recordNudge(t); location.href = nudgeHref(t); return 'Relance notée. Prochain point dans 2 jours ouvrés.'; } },
+        { label: 'C’est reçu', run: () => { t.status = 'done'; t.doneAt = Date.now(); putTask(t); return 'Parfait, tâche terminée.'; } },
+        { label: 'Je la reprends', run: () => { delegateTo(t, null); return 'Tâche reprise.'; } },
+      ],
+    });
+  }
+
   // 2. Urgent et important non planifié
-  for (const t of open.filter((t) => !t.start && category(t) === 'priorite').sort((a, b) => score(b) - score(a)).slice(0, 3)) {
+  for (const t of open.filter((t) => !t.delegate && !t.start && category(t) === 'priorite').sort((a, b) => score(b) - score(a)).slice(0, 3)) {
     const slot = proposeSlot(t, { morning: t.energy <= 2 });
     if (!slot) continue;
     push({
@@ -111,13 +127,13 @@ export function suggestions(analysis = analyze()) {
         ? `« ${t.title} » est urgente et importante mais plombante : confiez-la ou automatisez-la.`
         : `« ${t.title} » est importante, pas urgente, mais plombante : planifiez-la dans le temps avec un collaborateur.`,
       actions: team.length
-        ? team.slice(0, 4).map((p) => ({ label: `Confier à ${p.name}`, run: () => { t.delegate = p.id; putTask(t); } }))
+        ? team.slice(0, 4).map((p) => ({ label: `Confier à ${p.name}`, run: () => { delegateTo(t, p.id); return `Confiée à ${p.name}. Elle apparaît dans « En attente de… ».`; } }))
         : [{ label: 'Ajouter une personne', href: '#ressources' }],
     });
   }
 
   // 6b. Règle des 2 minutes (Allen)
-  for (const t of open.filter((t) => (t.estimate || 60) <= 2).slice(0, 3)) {
+  for (const t of open.filter((t) => !t.delegate && (t.estimate || 60) <= 2).slice(0, 3)) {
     push({ key: `now:${t.id}`, kind: 'now', tone: 'accent', taskId: t.id, title: 'Moins de 2 minutes : maintenant',
       text: `« ${t.title} » prend moins de 2 minutes : plus rapide à faire qu’à planifier.`,
       actions: [{ label: 'C’est fait', run: () => { t.status = 'done'; t.doneAt = Date.now(); putTask(t); } }] });
@@ -133,7 +149,7 @@ export function suggestions(analysis = analyze()) {
   }
 
   // 6d. Tâches longues à découper en séances (Cirillo, Kleitman)
-  for (const t of open.filter((t) => !t.start && !/\(séance \d+\/\d+\)$/.test(t.title) && (t.estimate || 60) > sessionOf(t)).sort((a, b) => score(b) - score(a)).slice(0, 2)) {
+  for (const t of open.filter((t) => !t.start && !t.delegate && !/\(séance \d+\/\d+\)$/.test(t.title) && (t.estimate || 60) > sessionOf(t)).sort((a, b) => score(b) - score(a)).slice(0, 2)) {
     const r = rhythmOf(t);
     push({ key: `split:${t.id}:${t.estimate}`, kind: 'split', tone: 'energy', taskId: t.id,
       title: 'Découper en séances',
@@ -164,7 +180,7 @@ export function suggestions(analysis = analyze()) {
   // 7. Enchaîner une tâche plombante avec une tâche dynamisante (récupération)
   const lift = open.filter((t) => !t.start && t.energy >= 3).sort((a, b) => score(b) - score(a));
   let liftN = 0;
-  for (const t of open.filter((t) => t.start && !t.allDay && t.energy <= 2).sort((a, b) => a.start.localeCompare(b.start))) {
+  for (const t of open.filter((t) => !t.delegate && t.start && !t.allDay && t.energy <= 2).sort((a, b) => a.start.localeCompare(b.start))) {
     if (!lift.length || liftN >= (isLeader() ? 1 : 2)) break;
     const end = tEnd(t);
     if (end < now || end > addDays(now, 2)) continue;

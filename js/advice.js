@@ -6,6 +6,7 @@
 
 import { db, tasks, newTask, putTask, save, people, category, catInfo, isLeader, spentOf, remainingOf } from './store.js';
 import { proposeSlot, findFreeSlot, setSpan, tStart, tEnd, propagate, completeTask } from './sched.js';
+import { delegateTo } from './delegation.js';
 import { esc, icon, fmt, cap, fmtDuration, addDays, addMinutes, startOfDay, MIN } from './util.js';
 
 export const SOURCES = [
@@ -112,7 +113,7 @@ export function runAdvice(t, act) {
   if (!t) return '';
   if (act === 'done') { completeTask(t); save('advice'); return 'Bravo, c’est fait !'; }
   if (act === 'automate') { t.automate = !t.automate; putTask(t); return t.automate ? 'Marquée « à automatiser ».' : 'Marque retirée.'; }
-  if (act.startsWith('delegate:')) { t.delegate = act.slice(9); putTask(t); return `Confiée à ${db.resources[t.delegate]?.name || ''}.`; }
+  if (act.startsWith('delegate:')) { delegateTo(t, act.slice(9)); return `Confiée à ${db.resources[t.delegate]?.name || ''}, retour attendu le ${fmt.dateShort.format(new Date(t.followUp + 'T00:00'))}.`; }
   if (act === 'people') { location.hash = '#ressources'; return ''; }
   if (act === 'batch') return batchSmall([t]);
   if (act === 'sessions' || act === 'sessions-spread') return planSessions(t, { spread: act === 'sessions-spread' });

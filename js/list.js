@@ -8,8 +8,9 @@ import { slider, bindSliders, info, LV, EN, energyChip, levelChip, projectChip, 
 import { esc, icon, toDateStr, fmtDuration } from './util.js';
 import { isConnected as msConnected } from './outlook.js';
 import { ghConfigured } from './github.js';
+import { waitingHtml, recordNudge } from './delegation.js';
 
-const F = Object.assign({ status: 'open', project: '', energy: '', q: '', sort: 'score', mode: 'list', sugg: true }, local.get('listFilters', {}));
+const F = Object.assign({ status: 'open', project: '', energy: '', q: '', sort: 'score', mode: 'list', sugg: true, wait: true }, local.get('listFilters', {}));
 const activeFilters = () => [F.project, F.energy, F.sort !== 'score' ? 1 : ''].filter(Boolean).length;
 const persist = () => { local.set('listFilters', F); };
 
@@ -165,6 +166,7 @@ export function renderList(el) {
 
       ${!msConnected() && !ghConfigured() ? `<a class="card sync-banner" href="#reglages/sync">${icon('sync', 20)}<div><b>Cet appareil n’est pas synchronisé</b><span>Les tâches saisies sur l’application (ou un autre ordinateur) n’apparaissent pas ici. Connectez-le une fois.</span></div><span class="btn primary sm">Connecter</span></a>` : ''}
       ${prioritiesHtml(tasks())}
+      ${waitingHtml(F.wait)}
       ${suggestionsHtml(an)}
 
       <div class="toolbar">
@@ -232,6 +234,11 @@ function bind(root, el) {
     const mo = e.target.closest('[data-open-id]');
     if (mo) { openTaskEditor(mo.dataset.openId); return; }
     if (e.target.closest('[data-more]')) { F.more = !F.more; persist(); renderList(el); return; }
+    if (e.target.closest('[data-toggle-wait]')) { F.wait = !F.wait; persist(); renderList(el); return; }
+    const nu = e.target.closest('[data-nudge]');
+    if (nu) { const t = db.tasks[nu.dataset.nudge]; if (t) { recordNudge(t); toast('Relance notée. Prochain point dans 2 jours ouvrés.'); } return; }
+    const rc = e.target.closest('[data-received]');
+    if (rc) { const t = db.tasks[rc.dataset.received]; if (t) toggleDone(t); return; }
     if (e.target.closest('[data-toggle-sugg]')) { F.sugg = !F.sugg; persist(); renderList(el); return; }
     const sga = e.target.closest('[data-sga]');
     if (sga) {
