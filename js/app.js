@@ -17,7 +17,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.3.0';
+const VERSION = '2.3.1';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
@@ -82,13 +82,13 @@ function shell() {
   document.body.addEventListener('click', (e) => {
     if (e.target.closest('[data-add]')) openTaskEditor();
     if (e.target.closest('[data-syncnow]')) {
-      if (ms.isConnected() || ghConfigured()) manualSync(); else location.hash = '#reglages/sync';
+      if (ms.needsReauth()) ms.reconnect(); else if (ms.isConnected() || ghConfigured()) manualSync(); else location.hash = '#reglages/sync';
     }
   });
   updateSyncIndicator();
 }
 
-const syncStatus = () => (ms.isConnected() || !ghConfigured() ? ms.getStatus() : ghStatus());
+const syncStatus = () => (ms.isConnected() || ms.needsReauth() || !ghConfigured() ? ms.getStatus() : ghStatus());
 
 function updateSyncIndicator(s = syncStatus()) {
   const el = document.querySelector('.sync-ind');
@@ -101,6 +101,7 @@ function updateSyncIndicator(s = syncStatus()) {
     syncing: ['syncing', 'Synchronisation…', s.detail || ''],
     offline: ['offline', 'Hors connexion', 'Les modifications sont enregistrées et seront synchronisées au retour du réseau.'],
     error: ['error', 'Erreur de synchro', s.error || ''],
+    reauth: ['offline', 'Reconnexion', 'La session Microsoft a expiré : touchez pour vous reconnecter.'],
   }[s.state] || ['off', '', ''];
   el.className = `sync-ind ${map[0]}`;
   el.innerHTML = `${icon('sync', 16)}<span class="hide-sm">${map[1]}</span>`;
@@ -196,7 +197,10 @@ function renderSettings(el) {
 
       <section class="card set">
         <h3>${icon('sync', 18)} Microsoft 365 (Exchange) ${info('outlook')}</h3>
-        ${connected ? `
+        ${ms.needsReauth() ? `
+          <p class="warn-text">${icon('alert', 16)} Session Microsoft expirée pour <b>${esc(ms.lastEmail())}</b> : vos réglages sont conservés, il suffit de vous reconnecter.</p>
+          <div class="row wrap gap"><button class="btn primary" data-act="reauth">Se reconnecter</button><button class="btn ghost" data-act="logout">Changer de compte</button></div>` : ''}
+        ${!ms.needsReauth() && connected ? `
           <p class="ok-text">${icon('check', 16)} <b>${esc(ms.accountLabel())}</b></p>
           <div class="row wrap gap">
             <label class="switch"><input type="checkbox" data-mstodo ${ms.useTodo() ? 'checked' : ''}><span></span> Microsoft To Do</label>
@@ -209,7 +213,7 @@ function renderSettings(el) {
             <button class="btn ghost" data-act="logout">Se déconnecter</button>
           </div>
           <p class="hint">${st.last ? `${fmt.dayShort.format(new Date(st.last))} · ${fmt.time.format(new Date(st.last))}` : ''}${st.error ? ` <span class="danger-text">${esc(st.error)}</span>` : ''}</p>`
-        : `
+        : ms.needsReauth() ? '' : `
           <label class="field"><span>Votre adresse e-mail Office 365</span>
             <input type="email" data-msemail value="${esc(ms.lastEmail())}" placeholder="prenom.nom@entreprise.fr" autocomplete="email" inputmode="email"></label>
           <div class="row wrap gap">
@@ -320,6 +324,7 @@ function renderSettings(el) {
       try { await ms.initMs(); await ms.login(email); } catch (err) { toast(err.message, { tone: 'danger' }); }
     }
     if (act === 'logout') ms.logout();
+    if (act === 'reauth') ms.reconnect();
     if (act === 'sync') manualSync();
     if (act === 'ghsync') manualSync();
     if (act === 'ghoff') { ghDisconnect(); toast('Cet appareil n’est plus synchronisé.'); render(); }
@@ -430,4 +435,5 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:' && !isNativeAp
   navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker', e));
 }
 
-start();
+// Dans l'iframe de reconnexion silencieuse Microsoft, on ne démarre pas l'application.
+if (window.self === window.top) start();

@@ -47,6 +47,7 @@ export const NATIVE_REDIRECT = 'https://aventumgroupe.github.io/plannings/auth-a
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 export const redirectUri = () => (isNative() ? NATIVE_REDIRECT : new URL('./', location.href).href);
 export const isConnected = () => !!account;
+export const needsReauth = () => status.state === 'reauth';
 export const useTodo = () => local.get('msTodo', true);
 export const useAgenda = () => local.get('msAgenda', true);
 export const setUse = (k, v) => local.set(k === 'todo' ? 'msTodo' : 'msAgenda', !!v);
@@ -71,6 +72,9 @@ function authority() {
 const testHook = () => window.__GP_TEST__ || null;
 
 // ---------- Authentification ----------
+const bootAt = Date.now();
+const inIframe = window.self !== window.top;
+
 export async function initMs() {
   if (testHook()) { account = testHook().account || { username: 'test@exemple.fr' }; setStatus({ state: 'idle' }); return true; }
   const id = clientId();
@@ -79,18 +83,50 @@ export async function initMs() {
     pca = new window.msal.PublicClientApplication({
       auth: { clientId: id, authority: authority(), redirectUri: redirectUri(), navigateToLoginRequestUrl: false },
       cache: { cacheLocation: 'localStorage' },
+      system: { iframeHashTimeout: 8000 },
     });
     await pca.initialize();
-    const r = await pca.handleRedirectPromise();
-    account = r?.account || pca.getActiveAccount() || pca.getAllAccounts()[0] || null;
-    if (account) pca.setActiveAccount(account);
-    setStatus({ state: account ? 'idle' : 'off', error: null });
-    return !!account;
   } catch (e) {
     console.error(e);
     setStatus({ state: 'error', error: messageOf(e) });
     return false;
   }
+  // Un retour de connexion raté ne doit pas faire « oublier » le compte déjà enregistré.
+  let r = null;
+  try { r = await pca.handleRedirectPromise(); } catch (e) { console.warn('Retour de connexion Microsoft', e); }
+  account = r?.account || pca.getActiveAccount() || pca.getAllAccounts()[0] || null;
+  if (r?.account) { local.set('msWanted', true); sessionStorage.removeItem('gpReauthTried'); }
+  // Compte absent du cache mais connexion souhaitée : reconnexion silencieuse avec l'adresse mémorisée.
+  if (!account && local.get('msWanted') && lastEmail()) account = await silentSignIn();
+  if (account) { pca.setActiveAccount(account); setStatus({ state: 'idle', error: null }); return true; }
+  if (local.get('msWanted') && lastEmail()) { setStatus({ state: 'reauth', error: null }); maybeAutoReconnect(); return false; }
+  setStatus({ state: 'off', error: null });
+  return false;
+}
+
+/** Reconnexion sans fenêtre (utilise la session Microsoft du navigateur). Version web uniquement. */
+async function silentSignIn() {
+  if (isNative() || inIframe) return null;
+  try {
+    const res = await pca.ssoSilent({ scopes: SCOPES, loginHint: lastEmail() });
+    return res.account;
+  } catch (e) { console.warn('Reconnexion silencieuse impossible', e); return null; }
+}
+
+/** Au lancement seulement (pour ne pas interrompre une saisie) : reconnexion automatique, une fois. */
+function maybeAutoReconnect() {
+  if (inIframe || Date.now() - bootAt > 30000) return;
+  const tried = Number(sessionStorage.getItem('gpReauthTried') || 0);
+  if (Date.now() - tried < 10 * 60 * 1000) return;
+  sessionStorage.setItem('gpReauthTried', String(Date.now()));
+  reconnect().catch(() => {});
+}
+
+/** Reconnexion en un geste (la session Microsoft évite généralement de retaper le mot de passe). */
+export async function reconnect() {
+  if (!pca) await initMs();
+  if (!pca) return;
+  await pca.loginRedirect({ scopes: SCOPES, loginHint: lastEmail() || undefined });
 }
 
 /** Connexion avec l'adresse Office 365 du salarié (page de connexion Microsoft pré-remplie). */
@@ -98,6 +134,7 @@ export async function login(email = '') {
   if (email && email !== lastEmail()) { local.set('msEmail', email); pca = null; } // annuaire propre à l'adresse
   if (!pca) await initMs();
   if (!pca) throw new Error('L’application n’est pas encore inscrite chez Microsoft : voir avec l’administrateur.');
+  local.set('msWanted', true);
   await pca.loginRedirect({ scopes: SCOPES, ...(email ? { loginHint: email } : { prompt: 'select_account' }) });
 }
 
@@ -105,6 +142,7 @@ export async function logout() {
   if (!pca || !account) return;
   const a = account;
   account = null;
+  local.set('msWanted', false);
   setStatus({ state: 'off' });
   await pca.logoutRedirect({ account: a, postLogoutRedirectUri: redirectUri() });
 }
@@ -115,10 +153,19 @@ async function token() {
     const r = await pca.acquireTokenSilent({ scopes: SCOPES, account });
     return r.accessToken;
   } catch (e) {
-    if (e instanceof window.msal.InteractionRequiredAuthError) {
-      await pca.acquireTokenRedirect({ scopes: SCOPES, account });
+    if (!(e instanceof window.msal.InteractionRequiredAuthError) && !/no_tokens_found|token_renewal|monitor_window_timeout|login_required/i.test(e.errorCode || '')) throw e;
+    // Session Microsoft expirée (environ 24 h pour ce type d'application) : on renouvelle sans rien demander si possible.
+    const acc = await silentSignIn();
+    if (acc) {
+      account = acc; pca.setActiveAccount(acc);
+      const r = await pca.acquireTokenSilent({ scopes: SCOPES, account });
+      return r.accessToken;
     }
-    throw e;
+    setStatus({ state: 'reauth' });
+    maybeAutoReconnect();
+    const err = new Error('Reconnexion Microsoft nécessaire : touchez « Se reconnecter ».');
+    err.reauth = true;
+    throw err;
   }
 }
 
@@ -220,7 +267,7 @@ export function syncAll({ manual = false } = {}) {
       return stats;
     } catch (e) {
       console.error(e);
-      setStatus({ state: 'error', error: messageOf(e), detail: '' });
+      setStatus(e.reauth ? { state: 'reauth', error: null, detail: '' } : { state: 'error', error: messageOf(e), detail: '' });
       if (manual) throw new Error(messageOf(e));
       return false;
     } finally {
