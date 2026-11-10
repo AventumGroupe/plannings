@@ -1,11 +1,12 @@
 {
   "name": "gestion-plannings",
-  "version": "2.0.0",
+  "version": "2.7.0",
   "private": true,
   "description": "Gestion des plannings - application Android (Capacitor) construite à partir de l'application web",
   "scripts": {
     "build": "node scripts/build-www.js",
-    "sync": "npm run build && npx cap sync android"
+    "sync": "npm run build && npx cap sync android",
+    "test": "playwright test"
   },
   "dependencies": {
     "@capacitor/android": "8.6.0",
@@ -14,6 +15,7 @@
   },
   "devDependencies": {
     "@capacitor/assets": "4.0.0",
-    "@capacitor/cli": "8.6.0"
+    "@capacitor/cli": "8.6.0",
+    "@playwright/test": "1.63.0"
   }
 }

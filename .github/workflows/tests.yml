@@ -1,0 +1,31 @@
+# Tests automatiques : logique de planification et parcours dans l'interface (ordinateur et téléphone).
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installer les dépendances
+        run: npm ci
+      - name: Installer le navigateur
+        run: npx playwright install --with-deps chromium
+      - name: Lancer les tests
+        run: npm test
+      - name: Rapport en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport-tests
+          path: playwright-report/
+          retention-days: 7
