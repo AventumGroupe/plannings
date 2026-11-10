@@ -5,13 +5,14 @@
 import { db, putTask, local, ENERGY, spentOf, remainingOf } from './store.js';
 import { sessionOf } from './advice.js';
 import { toast } from './ui.js';
+import { refreshNative } from './notify.js';
 import { esc, icon, uid, fmtDuration, toDateStr, addDays, MIN } from './util.js';
 
 const R = 110, C = 2 * Math.PI * R;
 let tick = null, wake = null, root = null;
 
 const state = () => local.get('focus', null);
-const setState = (s) => local.set('focus', s);
+const setState = (s) => { local.set('focus', s); refreshNative(true); };
 const stats = () => Object.assign({ total: 0, minutes: 0, days: {}, badges: [] }, local.get('focusStats', {}));
 
 const PHRASES = [

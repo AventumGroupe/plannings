@@ -20,5 +20,11 @@
       "*.live.com",
       "aventumgroupe.github.io"
     ]
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_plannings",
+      "iconColor": "#2F5BD3"
+    }
   }
 }

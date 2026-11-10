@@ -12,14 +12,14 @@ import { renderResources } from './resources.js';
 import { openTaskEditor } from './editor.js';
 import * as ms from './outlook.js';
 import { ghSync, ghStatus, onGhStatus, ghConfigured, ghRepo, ghSetup, ghDisconnect } from './github.js';
-import { notifSupported, notifEnabled, enableNotifications, disableNotifications, show, startReminders } from './notify.js';
+import { notifSupported, notifEnabled, enableNotifications, disableNotifications, show, startReminders, refreshNative, isNativeNotif } from './notify.js';
 import { toast, confirmDialog, slider, bindSliders, info, INFO } from './ui.js';
 import { sourcesHtml } from './advice.js';
 INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.6.0';
+const VERSION = '2.7.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'journee', label: 'Journée', icon: 'today', render: renderToday },
@@ -250,7 +250,8 @@ function renderSettings(el) {
         <h3>${icon('bell', 18)} Rappels ${info('rappels')}</h3>
         ${!notifSupported() ? '<p class="muted">Non pris en charge.</p>'
           : `<div class="row gap"><label class="switch"><input type="checkbox" data-notif ${notifEnabled() ? 'checked' : ''}><span></span> Notifications</label>
-             ${notifEnabled() ? `<button class="icon-btn xs" data-act="testnotif" title="Tester">${icon('bell', 16)}</button>` : ''}</div>`}
+             ${notifEnabled() ? `<button class="icon-btn xs" data-act="testnotif" title="Tester">${icon('bell', 16)}</button>` : ''}</div>
+             <p class="muted sm">${isNativeNotif() ? 'Notifications Android : rappels, résumé du matin, relances de délégation, revue du vendredi et fin de séance, même application fermée.' : 'Sur le web, les rappels s’affichent tant que la page est ouverte. Pour les recevoir application fermée, utilisez l’application Android.'}</p>`}
       </section>
 
       <section class="card set">
@@ -288,7 +289,7 @@ function renderSettings(el) {
       if (k === 'autoShift' && v) { const m = rollOverdue(); if (m.length) toast(`${m.length} tâche(s) en retard décalée(s).`); }
     }
     if (e.target.matches('[data-notif]')) {
-      if (e.target.checked) { const p = await enableNotifications(); if (p !== 'granted') toast('Notifications refusées par le navigateur.'); }
+      if (e.target.checked) { const p = await enableNotifications(); if (p !== 'granted') toast('Notifications refusées.'); }
       else disableNotifications();
       render(); return;
     }
@@ -345,7 +346,7 @@ function renderSettings(el) {
     }
 
     if (act === 'export') download(`gestion-plannings-${toDateStr(new Date())}.json`, exportJson());
-    if (act === 'notif') { const p = await enableNotifications(); toast(p === 'granted' ? 'Notifications activées.' : 'Notifications refusées par le navigateur.'); render(); }
+    if (act === 'notif') { const p = await enableNotifications(); toast(p === 'granted' ? 'Notifications activées.' : 'Notifications refusées.'); render(); }
     if (act === 'nonotif') { disableNotifications(); render(); }
     if (act === 'testnotif') show('Gestion des plannings', 'Les rappels fonctionnent 👍', 'test');
     if (act === 'install' && installEvent) { installEvent.prompt(); await installEvent.userChoice; installEvent = null; render(); }
@@ -401,6 +402,7 @@ async function start() {
   onChange((reason) => {
     if (reason === 'settings') applyTheme();
     rerender();
+    refreshNative();
     if (!['sync', 'merge'].includes(reason)) autoSync();
   });
   ms.onStatus(() => { updateSyncIndicator(); if (current === 'reglages') rerender(); });
