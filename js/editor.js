@@ -244,6 +244,7 @@ export function openTaskEditor(idOrPreset = null) {
     ${isNew ? '' : `<button type="button" class="btn ghost danger-text" data-act="delete">${icon('trash', 16)}<span class="hide-sm">Supprimer</span></button>
     <button type="button" class="btn ghost" data-act="dup">${icon('copy', 16)}<span class="hide-sm">Dupliquer</span></button>`}
     <span class="spacer"></span>
+    ${isNew || d.status === 'done' ? '' : `<button type="button" class="btn ghost" data-act="focus" title="Lancer le minuteur de concentration">${icon('play', 16)}<span class="hide-sm">Minuteur</span></button>`}
     <button type="button" class="btn ghost" data-close>Annuler</button>
     <button type="button" class="btn primary" data-act="save">${isNew ? 'Créer la tâche' : 'Enregistrer'}</button>`;
 
@@ -437,6 +438,11 @@ export function openTaskEditor(idOrPreset = null) {
     if (act === 'dup') {
       const c = newTask({ ...structuredClone(d), id: uid(), title: `${d.title} (copie)`, outlook: null, status: 'todo', doneAt: null, slips: 0, createdAt: Date.now() });
       putTask(c); close(); toast('Tâche dupliquée'); openTaskEditor(c.id);
+    }
+    if (act === 'focus') {
+      d.title = d.title.trim() || 'Tâche';
+      commit(); close();
+      import('./focus.js').then((m) => m.startFocus(db.tasks[d.id]));
     }
     if (act === 'save') {
       d.title = d.title.trim();

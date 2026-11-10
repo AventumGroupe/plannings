@@ -4,6 +4,8 @@ import { db, onChange, setSettings, local, exportJson, replaceDb, mergeRemote, t
 import { rollOverdue, propagate } from './sched.js';
 import { renderList } from './list.js';
 import { renderMatrix } from './matrix.js';
+import { renderToday } from './today.js';
+import { resumeFocus } from './focus.js';
 import { renderCalendar, calendarRoute, setCalendarHooks } from './calendar.js';
 import { renderGantt } from './gantt.js';
 import { renderResources } from './resources.js';
@@ -17,9 +19,10 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.4.0';
+const VERSION = '2.5.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
+  { id: 'journee', label: 'Journée', icon: 'today', render: renderToday },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
   { id: 'calendrier', label: 'Calendrier', icon: 'calendar', render: renderCalendar },
   { id: 'gantt', label: 'Gantt', icon: 'gantt', render: renderGantt },
@@ -408,6 +411,7 @@ async function start() {
 
   setInterval(() => { if (rollOverdue().length) toast('Des tâches en retard ont été reportées.'); }, 10 * 60 * 1000);
   startReminders();
+  resumeFocus();
 
   // Synchronisation provisoire entre appareils (dépôt GitHub privé)
   if (ghConfigured()) ghSync();
