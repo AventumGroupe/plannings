@@ -44,7 +44,7 @@ export const DEFAULT_SETTINGS = {
 };
 
 function blank() {
-  return { schema: 1, tasks: {}, projects: {}, resources: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS } };
+  return { schema: 1, tasks: {}, projects: {}, resources: {}, templates: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS } };
 }
 
 function normalizeTask(t) {
@@ -60,7 +60,7 @@ function normalizeTask(t) {
 function normalize(d) {
   const b = blank();
   const out = { ...b, ...d, settings: { ...DEFAULT_SETTINGS, ...(d.settings || {}) } };
-  for (const k of ['tasks', 'projects', 'resources', 'deleted']) out[k] = { ...(d[k] || {}) };
+  for (const k of ['tasks', 'projects', 'resources', 'templates', 'deleted']) out[k] = { ...(d[k] || {}) };
   for (const id in out.tasks) out.tasks[id] = normalizeTask(out.tasks[id]);
   return out;
 }
@@ -207,6 +207,10 @@ export function removeResource(id) {
   save('resource');
 }
 
+export const templates = () => Object.values(db.templates || {}).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+export function putTemplate(t) { t.updatedAt = Date.now(); db.templates[t.id] = t; save('template'); }
+export function removeTemplate(id) { delete db.templates[id]; db.deleted[id] = { at: Date.now(), kind: 'template' }; save('template'); }
+
 export function setSettings(patch) {
   Object.assign(db.settings, patch, { updatedAt: Date.now() });
   save('settings');
@@ -234,7 +238,7 @@ export function mergeRemote(remote) {
   for (const [id, del] of Object.entries(r.deleted)) {
     if (!db.deleted[id] || db.deleted[id].at < del.at) { db.deleted[id] = del; changed = true; }
   }
-  for (const k of ['tasks', 'projects', 'resources']) {
+  for (const k of ['tasks', 'projects', 'resources', 'templates']) {
     for (const [id, item] of Object.entries(r[k])) {
       const mine = db[k][id];
       if (!mine || modAt(item) > modAt(mine)) { db[k][id] = item; changed = true; }

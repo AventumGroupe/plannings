@@ -4,7 +4,7 @@
 import { db, tasks, projects, putTask, save, local, RES_TYPES, spentOf, progressOf } from './store.js';
 import { tStart, tEnd, setSpan, shiftTo, propagate, requiredStart, analyze, wouldCycle } from './sched.js';
 import { openTaskEditor } from './editor.js';
-import { openProjectEditor } from './resources.js';
+import { openProjectEditor, openTemplateDialog } from './resources.js';
 import { enableDrag, makeGhost, dropTarget, autoScroll } from './drag.js';
 import { toast, slider, bindSliders, info } from './ui.js';
 import { pertHtml } from './pert.js';
@@ -287,6 +287,7 @@ export function renderGantt(el) {
         <span class="spacer"></span>
         ${lateCount ? `<span class="badge danger" title="Tâches qui finiront après leur échéance">${icon('alert', 13)} ${lateCount}</span>` : ''}
         ${compact ? '' : `<button class="icon-btn" data-today title="Aujourd’hui" aria-label="Aujourd’hui">${icon('calendar', 18)}</button>`}
+        <button class="icon-btn" data-fromtpl title="Nouveau projet depuis un modèle" aria-label="Depuis un modèle">${icon('copy', 18)}</button>
         <button class="icon-btn" data-newproj title="Nouveau projet" aria-label="Nouveau projet">${icon('plus', 18)}</button>
         <button class="icon-btn" data-pdf title="Export PDF" aria-label="Export PDF">${icon('pdf', 18)}</button>
       </div>
@@ -326,6 +327,7 @@ function bind(el, { from, dayW }) {
     const mm = e.target.closest('[data-mm]');
     if (mm) { G.mobileMode = mm.dataset.mm; persist(); renderGantt(el); return; }
     if (e.target.closest('[data-pdf]')) { exportPdf(); return; }
+    if (e.target.closest('[data-fromtpl]')) { openTemplateDialog(); return; }
     if (e.target.closest('[data-newproj]')) { openProjectEditor(); return; }
     const ep = e.target.closest('[data-editproj]');
     if (ep) { openProjectEditor(ep.dataset.editproj); return; }

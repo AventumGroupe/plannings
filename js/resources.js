@@ -7,7 +7,8 @@ import {
 import { analyze, tStart, tEnd } from './sched.js';
 import { openDialog, confirmDialog, toast, slider, bindSliders, info } from './ui.js';
 import { openTaskEditor } from './editor.js';
-import { esc, icon, parse, fmt, addDays } from './util.js';
+import { esc, icon, parse, fmt, addDays, toDateStr } from './util.js';
+import { allTemplates, instantiate, saveAsTemplate, removeTemplate } from './templates.js';
 
 export function openProjectEditor(id = null) {
   const existing = id ? db.projects[id] : null;
@@ -19,10 +20,14 @@ export function openProjectEditor(id = null) {
       <div class="field"><span>Couleur</span><div class="colors">${PROJECT_COLORS.map((c) => `<button type="button" class="color ${p.color === c ? 'on' : ''}" data-color="${c}" style="background:${c}" aria-label="Couleur ${c}"></button>`).join('')}</div></div>
       <label class="field"><span>Échéance du projet ${info('projet')}</span><input type="date" data-k="deadline" value="${esc(p.deadline || '')}"></label>
       <label class="field"><span>Notes</span><textarea data-k="notes" rows="3">${esc(p.notes || '')}</textarea></label>`,
-    footer: `${existing ? `<button type="button" class="btn ghost danger-text" data-del>${icon('trash', 16)} Supprimer</button>` : ''}<span class="spacer"></span>
+    footer: `${existing ? `<button type="button" class="btn ghost danger-text" data-del>${icon('trash', 16)}<span class="hide-sm">Supprimer</span></button><button type="button" class="btn ghost" data-tpl>${icon('copy', 16)} En faire un modèle</button>` : ''}<span class="spacer"></span>
       <button type="button" class="btn ghost" data-close>Annuler</button><button type="button" class="btn primary" data-save>Enregistrer</button>`,
   });
   setTimeout(() => el.querySelector('[data-k="name"]').focus(), 50);
+  el.querySelector('[data-tpl]')?.addEventListener('click', () => {
+    const tpl = saveAsTemplate(p.id, p.name);
+    toast(tpl ? `Modèle « ${tpl.name} » enregistré (${tpl.steps.length} étapes).` : 'Ajoutez d’abord des tâches datées à ce projet.');
+  });
   el.addEventListener('click', async (e) => {
     const c = e.target.closest('[data-color]');
     if (c) { p.color = c.dataset.color; el.querySelectorAll('.color').forEach((x) => x.classList.toggle('on', x === c)); }
@@ -118,7 +123,7 @@ export function renderResources(el) {
 
   el.innerHTML = `
     <section class="view res-view">
-      <div class="section-head"><h2>Projets</h2><button class="icon-btn" data-newproj title="Nouveau projet" aria-label="Nouveau projet">${icon('plus', 20)}</button></div>
+      <div class="section-head"><h2>Projets</h2><span class="spacer"></span><button class="btn ghost sm" data-fromtpl>${icon('copy', 16)} Depuis un modèle</button><button class="icon-btn" data-newproj title="Nouveau projet" aria-label="Nouveau projet">${icon('plus', 20)}</button></div>
       ${ps.length ? `<ul class="res-grid">${projHtml}</ul>` : '<p class="muted">Aucun projet.</p>'}
       <div class="section-head"><h2>Ressources ${info('ressources')}</h2></div>
       <div class="res-groups">${resHtml}</div>
@@ -127,6 +132,7 @@ export function renderResources(el) {
   el.querySelector('.res-view').addEventListener('click', (e) => {
     const tk = e.target.closest('[data-task]');
     if (tk) { openTaskEditor(tk.dataset.task); return; }
+    if (e.target.closest('[data-fromtpl]')) { openTemplateDialog(); return; }
     if (e.target.closest('[data-newproj]')) { openProjectEditor(); return; }
     const nr = e.target.closest('[data-newres]');
     if (nr) { openResourceEditor(null, nr.dataset.newres); return; }
@@ -134,5 +140,40 @@ export function renderResources(el) {
     if (pc) { openProjectEditor(pc.dataset.proj); return; }
     const rc = e.target.closest('[data-res]');
     if (rc) openResourceEditor(rc.dataset.res);
+  });
+}
+
+/** Nouveau projet à partir d'un modèle : rétroplanning depuis la date clé. */
+export function openTemplateDialog() {
+  const list = allTemplates();
+  let sel = list[0]?.id;
+  const def = toDateStr(addDays(new Date(), 42));
+  const body = () => `
+    <div class="tpl-list">${list.map((t) => `
+      <label class="tpl-item ${t.id === sel ? 'on' : ''}"><input type="radio" name="tpl" value="${t.id}" ${t.id === sel ? 'checked' : ''}>
+        <span><b>${esc(t.name)}</b><small>${t.steps.length} étapes${t.builtin ? ' · modèle fourni' : ''}</small></span>
+        ${t.builtin ? '' : `<button type="button" class="icon-btn xs" data-deltpl="${t.id}" title="Supprimer ce modèle">${icon('trash', 14)}</button>`}
+      </label>`).join('')}</div>
+    <label class="field big"><span>Nom du projet</span><input type="text" data-k="name" value="${esc(list.find((t) => t.id === sel)?.name || '')}"></label>
+    <label class="field"><span>${esc(list.find((t) => t.id === sel)?.anchor || 'Date clé')}</span><input type="date" data-k="date" value="${def}"></label>
+    <p class="hint">Les étapes sont planifiées à rebours depuis cette date, en jours ouvrés, avec leurs liens. Tout reste modifiable ensuite.</p>`;
+  const { el, close } = openDialog({
+    title: 'Nouveau projet depuis un modèle', body: body(),
+    footer: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Annuler</button><button type="button" class="btn primary" data-create>Créer le projet</button>`,
+  });
+  el.addEventListener('change', (e) => {
+    if (e.target.name === 'tpl') { sel = e.target.value; el.querySelector('.sheet-body').innerHTML = body(); }
+  });
+  el.addEventListener('click', (e) => {
+    const d = e.target.closest('[data-deltpl]');
+    if (d) { e.preventDefault(); removeTemplate(d.dataset.deltpl); close(); toast('Modèle supprimé.'); return; }
+    if (e.target.closest('[data-create]')) {
+      const name = el.querySelector('[data-k="name"]').value.trim();
+      const date = el.querySelector('[data-k="date"]').value;
+      if (!date) { toast('Indiquez la date clé.'); return; }
+      const r = instantiate(sel, { name, anchorDate: date });
+      close();
+      if (r) { toast(`Projet « ${r.project.name} » créé : ${r.count} tâches planifiées.`); location.hash = '#gantt'; }
+    }
   });
 }
