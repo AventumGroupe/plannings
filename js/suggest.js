@@ -5,6 +5,7 @@ import { db, tasks, putTask, save, local, people, score, category, isLeader } fr
 import { tStart, tEnd, setSpan, proposeSlot, analyze, propagate, findFreeSlot } from './sched.js';
 import { fmt, cap, sameDay, addDays, startOfDay, toDateStr, fmtDuration, MIN, HOUR } from './util.js';
 import { delegateTo, followUpDue, nudgeHref, recordNudge } from './delegation.js';
+import { reviewDue } from './review.js';
 import { sessionOf, planSessions, batchSmall, rhythmOf } from './advice.js';
 
 const DISMISS_DAYS = 7;
@@ -57,6 +58,9 @@ export function suggestions(analysis = analyze()) {
       });
     }
   }
+
+  // 0. Revue de la semaine
+  if (reviewDue()) push({ key: `review:${toDateStr(now)}`, kind: 'review', tone: 'accent', title: 'Revue de la semaine', text: 'Bilan, ce qui a glissé, délégations en attente et priorités de la semaine prochaine : 15 minutes.', actions: [{ label: 'Commencer', href: '#journee/revue' }] });
 
   // 1b. Délégations à relancer
   for (const t of followUpDue().slice(0, 4)) {

@@ -45,6 +45,7 @@ function route() {
   const [tab, ...rest] = (location.hash.replace(/^#\/?/, '') || 'taches').split('/');
   current = TABS.some((t) => t.id === tab) ? tab : 'taches';
   if (current === 'calendrier') calendarRoute(rest);
+  if (current === 'journee' && rest[0] === 'revue') { history.replaceState(null, '', '#journee'); import('./review.js').then((m) => m.openReview()); }
   const focusSync = current === 'reglages' && rest[0] === 'sync';
   document.querySelectorAll('[data-tab]').forEach((a) => a.classList.toggle('on', a.dataset.tab === current));
   render();

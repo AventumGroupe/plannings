@@ -4,6 +4,7 @@
 import { db, tasks, putTask, save, local, outlookEvents, score, category, catInfo, ENERGY, remainingOf, progressOf } from './store.js';
 import { tStart, tEnd, setSpan, busyOn, propagate, analyze } from './sched.js';
 import { sessionOf } from './advice.js';
+import { reviewDue } from './review.js';
 import { openTaskEditor } from './editor.js';
 import { slider, bindSliders, info, toast, ring, openDialog } from './ui.js';
 import { esc, icon, fmt, cap, parse, startOfDay, addDays, addMinutes, roundUp, toDateStr, fmtDuration, MIN } from './util.js';
@@ -176,6 +177,7 @@ export function renderToday(el) {
           <small>${fmtDuration(Math.round(st.planned))} prévues · ${fmtDuration(Math.round(st.free))} libres${st.doneToday ? ` · ${st.doneToday} faite${st.doneToday > 1 ? 's' : ''} aujourd’hui` : ''}</small></div>
         ${ring(st.pct, 56, 'lg')}
       </header>
+      ${reviewDue() ? `<a class="card review-banner" href="#journee/revue">${icon('check', 20)}<div><b>C’est l’heure de la revue de la semaine</b><span>15 minutes pour boucler la semaine et préparer la suivante.</span></div><span class="btn primary sm">Commencer</span></a>` : ''}
 
       <div class="card energy-now">
         ${slider('enow', { label: 'Mon énergie maintenant', values: [1, 2, 3, 4], labels: ['Épuisé', 'Fatigué', 'En forme', 'Au top'], value: e, kind: 'energy', ticks: 'labels' })}
@@ -198,6 +200,7 @@ export function renderToday(el) {
       <section class="card day-card">
         <header class="row"><h3>Ma journée</h3><span class="spacer"></span>
           <button class="btn sm" data-propose>${icon('bulb', 16)} Proposer ma journée</button>
+          <a class="btn sm ghost" href="#journee/revue" title="Revue de la semaine">${icon('check', 16)}<span class="hide-sm">Revue</span></a>
           ${info('', 'Remplit les créneaux libres restants avec vos tâches non planifiées : plombantes le matin (jamais deux d’affilée, 2 h 30 au plus), dynamisantes ensuite, en séances avec une pause. Vous validez avant.')}
         </header>
         ${st.dueToday.length ? `<div class="due-today"><small>À rendre ou en cours aujourd’hui :</small>${st.dueToday.map((x) => `<button class="chip" data-open-id="${x.id}">${esc(x.title)}</button>`).join('')}</div>` : ''}
