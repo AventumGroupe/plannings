@@ -1079,16 +1079,22 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .due-today small { color: var(--muted); width: 100%; }
 .timeline { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .tl { display: flex; align-items: stretch; gap: 10px; }
-.tl-time { width: 50px; flex: none; display: flex; flex-direction: column; font-weight: 650; font-variant-numeric: tabular-nums; font-size: .86rem; }
+.tl-time { width: 50px; flex: none; display: flex; flex-direction: column; font-weight: 650; font-variant-numeric: tabular-nums; font-size: .86rem; padding-top: 8px; }
 .tl-time small { color: var(--muted); font-weight: 400; }
-.tl-body { flex: 1; display: flex; flex-direction: column; text-align: left; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 0; border-left: 4px solid var(--line); color: var(--text); font: inherit; cursor: pointer; }
-.tl-body small { color: var(--muted); font-size: .76rem; }
-.tl.ev .tl-body { background: repeating-linear-gradient(135deg, var(--surface-2) 0 8px, var(--surface-3) 8px 16px); border-left-color: var(--muted); cursor: default; }
-.tl.free .tl-body { background: transparent; border: 1px dashed var(--line); border-left-width: 1px; color: var(--muted); cursor: default; }
-.tl.task.e1 .tl-body { border-left-color: var(--e1); } .tl.task.e2 .tl-body { border-left-color: var(--e2); } .tl.task.e3 .tl-body { border-left-color: var(--e3); } .tl.task.e4 .tl-body { border-left-color: var(--e4); }
-.tl.task.done .tl-body { opacity: .55; }
-.tl.task.cur .tl-body { box-shadow: 0 0 0 2px var(--accent); }
-.tl > .icon-btn { align-self: center; }
+.tl-cards { flex: 1; min-width: 0; display: flex; gap: 6px; }
+.tl-cards.multi { overflow-x: auto; scroll-snap-type: x proximity; }
+.tl-cards.multi .tl-card { flex: 1 1 0; min-width: 150px; scroll-snap-align: start; }
+.tl-card { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; border-radius: 10px; background: var(--surface-2); border-left: 4px solid var(--line); padding: 8px 10px; }
+.tl-card > b, .tl-card > small { display: block; }
+.tl-card b, .tl-main b { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tl-card small { color: var(--muted); font-size: .76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-ev { flex-direction: column; align-items: stretch; background: repeating-linear-gradient(135deg, var(--surface-2) 0 8px, var(--surface-3) 8px 16px); border-left-color: var(--muted); }
+.tl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; background: none; border: 0; padding: 0; color: var(--text); font: inherit; cursor: pointer; }
+.tl-own { font-weight: 650; color: var(--text) !important; }
+.tl-task.e1 { border-left-color: var(--e1); } .tl-task.e2 { border-left-color: var(--e2); } .tl-task.e3 { border-left-color: var(--e3); } .tl-task.e4 { border-left-color: var(--e4); }
+.tl-task.done { opacity: .55; }
+.tl-task.cur { box-shadow: 0 0 0 2px var(--accent); }
+.tl-gap { background: transparent; border: 1px dashed var(--line); color: var(--muted); }
 .tl-now { display: flex; align-items: center; gap: 8px; color: var(--danger); font-weight: 700; font-size: .78rem; }
 .tl-now span { width: 50px; }
 .tl-now i { flex: 1; height: 2px; background: var(--danger); border-radius: 2px; }
@@ -1196,3 +1202,9 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .as-note { margin: 0; }
 .as-empty { text-align: center; color: var(--muted); padding: 24px 8px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .as-sugg { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tl-spans { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 4px; }
+.tl-spans > small { color: var(--muted); width: 100%; }
+.tl-span { max-width: 100%; border-left: 4px solid var(--line); }
+.tl-span small { color: var(--muted); margin-left: 6px; }
+.tl-span.e1 { border-left-color: var(--e1); } .tl-span.e2 { border-left-color: var(--e2); } .tl-span.e3 { border-left-color: var(--e3); } .tl-span.e4 { border-left-color: var(--e4); }
+.tl-span.done { opacity: .55; }

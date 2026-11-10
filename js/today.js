@@ -133,34 +133,48 @@ function stats() {
 
 function timelineHtml() {
   const S = db.settings, now = new Date();
-  const blocks = dayBlocks();
-  const gaps = freeGaps();
-  const items = [
-    ...blocks.map((b) => ({ ...b })),
-    ...gaps.map(([s, e]) => ({ kind: 'free', s, e })),
+  const ds = startOfDay(now), de = addDays(ds, 1);
+  // Ramène chaque élément à la journée (une tâche commencée la veille démarre à 0 h).
+  const all = dayBlocks().map((b) => ({ ...b, s: b.s < ds ? ds : b.s, e: b.e > de ? de : b.e }));
+  // Les tâches longues (plus de 3 h, ou commencées un autre jour) vont dans le bandeau « Sur la journée ».
+  const long = (b) => b.kind === 'task' && (b.e - b.s > 3 * 60 * MIN || b.t.start.slice(0, 10) !== toDateStr(now));
+  const blocks = all.filter((b) => !long(b));
+  const spans = all.filter(long);
+  // Groupes d'éléments qui se chevauchent : affichés côte à côte.
+  const groups = [];
+  for (const b of blocks.sort((a, b2) => a.s - b2.s || b2.e - a.e)) {
+    const g = groups[groups.length - 1];
+    if (g && b.s < g.e) { g.items.push(b); if (b.e > g.e) g.e = b.e; } else groups.push({ s: b.s, e: b.e, items: [b] });
+  }
+  const rows = [
+    ...groups.map((g) => ({ kind: 'group', ...g })),
+    ...freeGaps().map(([s2, e2]) => ({ kind: 'free', s: s2, e: e2 })),
   ].sort((a, b) => a.s - b.s);
-  let nowShown = false;
-  const nowLine = () => { nowShown = true; return `<li class="tl-now"><span>${fmt.time.format(now)}</span><i></i></li>`; };
-  const rows = items.map((b) => {
-    let pre = '';
-    if (!nowShown && b.s >= now) pre = nowLine();
-    const time = `<span class="tl-time">${fmt.time.format(b.s)}<small>${fmt.time.format(b.e)}</small></span>`;
-    if (b.kind === 'free') {
-      const m = Math.round((b.e - b.s) / MIN);
-      return `${pre}<li class="tl free">${time}<div class="tl-body"><span>Libre · ${fmtDuration(m)}</span></div></li>`;
-    }
+  const hm = (d) => fmt.time.format(d);
+  const card = (b, multi) => {
+    const own = multi ? `<small class="tl-own">${hm(b.s)} – ${hm(b.e)}</small>` : '';
     if (b.kind === 'event') {
-      return `${pre}<li class="tl ev">${time}<div class="tl-body"><b>${esc(b.ev.subject || 'Rendez-vous')}</b><small>Outlook${b.ev.location ? ' · ' + esc(b.ev.location) : ''}</small></div></li>`;
+      return `<div class="tl-card tl-ev" title="${esc(b.ev.subject || '')}">${own}<b>${esc(b.ev.subject || 'Rendez-vous')}</b><small>${b.ev.rh ? 'Plateforme RH' : 'Outlook'}${b.ev.location && !b.ev.rh ? ' · ' + esc(b.ev.location) : ''}</small></div>`;
     }
     const t = b.t, cur = b.s <= now && b.e > now;
-    return `${pre}<li class="tl task e${t.energy} ${t.status === 'done' ? 'done' : ''} ${cur ? 'cur' : ''}">${time}
-      <button class="tl-body" data-open-id="${t.id}"><b>${t.status === 'done' ? '✓ ' : ''}${esc(t.title)}</b><small>${esc(ENERGY[t.energy].label)} · ${esc(catInfo(category(t)).label)}</small></button>
-      ${t.status !== 'done' ? `<button class="icon-btn xs" data-focus="${t.id}" title="Lancer le minuteur" aria-label="Lancer le minuteur">${icon('play', 16)}</button>` : ''}</li>`;
+    return `<div class="tl-card tl-task e${t.energy} ${t.status === 'done' ? 'done' : ''} ${cur ? 'cur' : ''}">
+      <button class="tl-main" data-open-id="${t.id}">${own}<b>${t.status === 'done' ? '✓ ' : ''}${esc(t.title)}</b><small>${esc(ENERGY[t.energy].label)} · ${esc(catInfo(category(t)).label)}</small></button>
+      ${t.status !== 'done' ? `<button class="icon-btn xs" data-focus="${t.id}" title="Lancer le minuteur" aria-label="Lancer le minuteur">${icon('play', 16)}</button>` : ''}</div>`;
+  };
+  let nowShown = false;
+  const nowLine = () => { nowShown = true; return `<li class="tl-now"><span>${hm(now)}</span><i></i></li>`; };
+  const html = rows.map((r) => {
+    const pre = !nowShown && r.s >= now ? nowLine() : '';
+    const time = `<span class="tl-time">${hm(r.s)}<small>${hm(r.e)}</small></span>`;
+    if (r.kind === 'free') return `${pre}<li class="tl tl-free">${time}<div class="tl-cards"><div class="tl-card tl-gap">Libre · ${fmtDuration(Math.round((r.e - r.s) / MIN))}</div></div></li>`;
+    const multi = r.items.length > 1;
+    return `${pre}<li class="tl">${time}<div class="tl-cards ${multi ? 'multi' : ''}">${r.items.map((b) => card(b, multi)).join('')}</div></li>`;
   }).join('');
-  const start = new Date(now); start.setHours(S.dayStart, 0, 0, 0);
-  const end = new Date(now); end.setHours(S.dayEnd, 0, 0, 0);
-  const tail = !nowShown && now >= start && now < end ? nowLine() : '';
-  return rows || tail ? `<ol class="timeline">${rows}${tail}</ol>` : `<p class="muted">Rien de prévu aujourd’hui.</p>`;
+  const startH = new Date(now); startH.setHours(S.dayStart, 0, 0, 0);
+  const endH = new Date(now); endH.setHours(S.dayEnd, 0, 0, 0);
+  const tail = !nowShown && now >= startH && now < endH ? nowLine() : '';
+  const spanHtml = spans.length ? `<div class="tl-spans"><small>Sur la journée</small>${spans.map((b2) => `<button class="chip tl-span e${b2.t.energy} ${b2.t.status === 'done' ? 'done' : ''}" data-open-id="${b2.t.id}" title="${esc(b2.t.title)}">${b2.t.status === 'done' ? '✓ ' : ''}${esc(b2.t.title)}<small>jusqu’à ${hm(new Date(Math.min(tEnd(b2.t), de)))}</small></button>`).join('')}</div>` : '';
+  return spanHtml + (html || tail ? `<ol class="timeline">${html}${tail}</ol>` : `<p class="muted">Rien d’autre de prévu aujourd’hui.</p>`);
 }
 
 export function renderToday(el) {
