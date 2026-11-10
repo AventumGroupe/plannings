@@ -17,7 +17,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.1.1';
+const VERSION = '2.2.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
@@ -198,7 +198,12 @@ function renderSettings(el) {
         <h3>${icon('sync', 18)} Microsoft 365 (Exchange) ${info('outlook')}</h3>
         ${connected ? `
           <p class="ok-text">${icon('check', 16)} <b>${esc(ms.accountLabel())}</b></p>
-          <label class="field"><span>Calendrier</span><select data-cal><option value="">Calendrier principal</option></select></label>
+          <div class="row wrap gap">
+            <label class="switch"><input type="checkbox" data-mstodo ${ms.useTodo() ? 'checked' : ''}><span></span> Microsoft To Do</label>
+            <label class="switch"><input type="checkbox" data-msagenda ${ms.useAgenda() ? 'checked' : ''}><span></span> Agenda Outlook</label>
+            ${info('', 'Microsoft To Do : les tâches sans heure précise vont dans la liste « Plannings » (titre, échéance, statut, importance, rappel) et leurs sous-tâches deviennent des « étapes » To Do, dans les deux sens. Agenda Outlook : les tâches avec une heure précise deviennent des rendez-vous. Si l’agenda est désactivé, toutes les tâches vont dans To Do.')}
+          </div>
+          <label class="field" ${ms.useAgenda() ? '' : 'hidden'}><span>Calendrier</span><select data-cal><option value="">Calendrier principal</option></select></label>
           <div class="row wrap gap">
             <button class="btn primary" data-act="sync">${icon('sync', 16)} Synchroniser</button>
             <button class="btn ghost" data-act="logout">Se déconnecter</button>
@@ -277,6 +282,10 @@ function renderSettings(el) {
       if (e.target.checked) { const p = await enableNotifications(); if (p !== 'granted') toast('Notifications refusées par le navigateur.'); }
       else disableNotifications();
       render(); return;
+    }
+    if (e.target.matches('[data-mstodo]') || e.target.matches('[data-msagenda]')) {
+      ms.setUse(e.target.matches('[data-mstodo]') ? 'todo' : 'agenda', e.target.checked);
+      render(); manualSync(); return;
     }
     if (e.target.matches('[data-cal]')) { ms.setCalendarId(e.target.value); toast('Calendrier choisi. Synchronisation…'); manualSync(); }
     if (e.target.matches('[data-clientid]')) { const v = e.target.value.trim(); if (v && !/^[0-9a-f-]{36}$/i.test(v)) { toast('Format attendu : 00000000-0000-0000-0000-000000000000.'); return; } ms.setClientId(v); render(); }

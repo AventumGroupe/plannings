@@ -156,14 +156,15 @@ export function openTaskEditor(idOrPreset = null) {
         <li><input type="checkbox" data-subdone="${x.id}" ${x.done ? 'checked' : ''} aria-label="Fait">
           <input type="text" value="${esc(x.title)}" data-subtitle="${x.id}" aria-label="Sous-tâche">
           <input type="text" class="sub-spent" value="${x.spent ? esc(fmtDuration(x.spent)) : ''}" data-subspent="${x.id}" placeholder="temps" aria-label="Temps passé" title="Temps passé (ex. 1h30, 45, 2,5)">
-          <button type="button" class="x" data-rmsub="${x.id}" aria-label="Supprimer">${icon('close', 14)}</button></li>`).join('')}
+          <button type="button" class="x" data-rmsub="${x.id}" aria-label="Supprimer">${icon('close', 14)}</button>
+          <div class="sub-dates"><span>${icon('gantt', 13)} du</span><input type="date" value="${esc(x.start || '')}" data-substart="${x.id}" aria-label="Début"><span>au</span><input type="date" value="${esc(x.end || '')}" data-subend="${x.id}" aria-label="Fin"></div></li>`).join('')}
       </ul>
       <div class="row gap sub-new">
         <input type="text" data-newsub placeholder="Nouvelle sous-tâche">
         <input type="text" class="sub-spent" data-newspent placeholder="temps passé" title="Si déjà réalisée : temps passé (ex. 1h30)">
         <button type="button" class="btn ghost sm" data-act="addsub">${icon('plus', 16)}</button>
       </div>
-      <p class="hint">Déjà réalisée ? Indiquez le temps passé : elle est ajoutée comme faite et décomptée de la charge restante.</p>`;
+      <p class="hint">Déjà réalisée ? Indiquez le temps passé : elle est ajoutée comme faite et décomptée de la charge restante. Avec des dates, la sous-tâche apparaît sous sa tâche dans le Gantt.</p>`;
   }
 
   function recurHtml() {
@@ -336,6 +337,14 @@ export function openTaskEditor(idOrPreset = null) {
         return;
       } else d.assign.push({ id: t.value, qty: null });
       part('res', resHtml());
+    } else if (t.dataset.substart || t.dataset.subend) {
+      const x = d.subtasks.find((y) => y.id === (t.dataset.substart || t.dataset.subend));
+      if (x) {
+        if (t.dataset.substart) { x.start = t.value || null; if (x.start && (!x.end || x.end < x.start)) x.end = x.start; }
+        else { x.end = t.value || null; if (x.end && x.start && x.end < x.start) x.start = x.end; if (x.end && !x.start) x.start = x.end; }
+        if (!x.start) x.end = null;
+      }
+      part('sub', subHtml());
     } else if (t.dataset.subspent) {
       const x = d.subtasks.find((y) => y.id === t.dataset.subspent);
       if (x) { x.spent = parseDuration(t.value); if (x.spent && !x.done) { x.done = true; x.doneAt = Date.now(); } }

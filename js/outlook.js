@@ -47,6 +47,9 @@ export const NATIVE_REDIRECT = 'https://aventumgroupe.github.io/plannings/auth-a
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 export const redirectUri = () => (isNative() ? NATIVE_REDIRECT : new URL('./', location.href).href);
 export const isConnected = () => !!account;
+export const useTodo = () => local.get('msTodo', true);
+export const useAgenda = () => local.get('msAgenda', true);
+export const setUse = (k, v) => local.set(k === 'todo' ? 'msTodo' : 'msAgenda', !!v);
 export const accountLabel = () => account ? (account.name ? `${account.name} (${account.username})` : account.username) : '';
 
 class GraphError extends Error {
@@ -162,7 +165,7 @@ export async function listCalendars() {
 
 // ---------- Règle de répartition ----------
 /** Une tâche avec une heure précise va dans l'agenda ; les autres vont dans To Do. */
-const inAgenda = (t) => !!t.start && !t.allDay;
+const inAgenda = (t) => useAgenda() && !!t.start && !t.allDay;
 
 /** Fiche transportée dans Exchange (sans les identifiants propres à chaque élément). */
 const packTask = (t) => JSON.stringify({ ...t });
@@ -176,15 +179,16 @@ export function syncAll({ manual = false } = {}) {
     setStatus({ state: 'syncing', error: null, detail: 'Exchange…' });
     try {
       const stats = { pulled: 0, pushed: 0, removed: 0 };
-      step = 'Liste To Do'; const listId = await ensureList();
+      const todoOn = useTodo(), agendaOn = useAgenda();
+      step = 'Liste To Do'; const listId = todoOn ? await ensureList() : null;
       const now = new Date();
       const from = addDays(startOfDay(now), -PAST_DAYS);
       const to = addDays(startOfDay(now), FUTURE_DAYS);
 
       // 1. Lecture : données générales, tâches To Do, rendez-vous
-      step = 'Lecture des réglages'; const meta = await readMeta(listId);
-      step = 'Lecture des tâches To Do'; const todos = await readTodos(listId);
-      step = 'Lecture de l’agenda'; const events = await readEvents(from, to);
+      step = 'Lecture des réglages'; const meta = todoOn ? await readMeta(listId) : null;
+      step = 'Lecture des tâches To Do'; const todos = todoOn ? await readTodos(listId) : [];
+      step = 'Lecture de l’agenda'; const events = agendaOn ? await readEvents(from, to) : { ours: [], external: [] };
 
       // 2. Fusion (pour chaque élément, la version la plus récente gagne)
       const remote = { tasks: {}, projects: meta?.projects || {}, resources: meta?.resources || {}, deleted: meta?.deleted || {}, settings: meta?.settings };
@@ -195,16 +199,18 @@ export function syncAll({ manual = false } = {}) {
 
       // 3. Modifications faites directement dans To Do / Outlook
       setStatus({ detail: 'To Do…' });
-      step = 'Fusion'; stats.pulled += applyTodoEdits(todos, listId);
+      step = 'Fusion'; if (todoOn) stats.pulled += applyTodoEdits(todos, listId);
       setStatus({ detail: 'Agenda…' });
-      stats.pulled += await applyEventEdits(events.ours);
-      local.set('outlookEvents', events.external);
+      if (agendaOn) { stats.pulled += await applyEventEdits(events.ours); local.set('outlookEvents', events.external); }
+      else local.set('outlookEvents', []);
 
       // 4. Envoi
-      step = 'Envoi vers l’agenda'; stats.pushed += await pushEvents(from, stats);
-      step = 'Envoi vers To Do'; stats.pushed += await pushTodos(listId, stats);
+      step = 'Envoi vers l’agenda'; if (agendaOn) stats.pushed += await pushEvents(from, stats);
+      else for (const t of tasks()) if (t.outlook?.id) { await ignore404(graph(`/me/events/${t.outlook.id}`, { method: 'DELETE' })); t.outlook = null; putTask(t, { silent: true, touch: false }); stats.removed++; }
+      step = 'Envoi vers To Do'; if (todoOn) stats.pushed += await pushTodos(listId, stats);
+      step = 'Étapes To Do'; if (todoOn) stats.pulled += await syncAllChecklists(listId, stats);
       step = 'Suppressions'; await pushDeleted(stats);
-      step = 'Enregistrement des réglages'; await writeMeta(listId, meta);
+      step = 'Enregistrement des réglages'; if (todoOn) await writeMeta(listId, meta);
       step = '';
 
       save('sync');
@@ -255,11 +261,19 @@ async function writeMeta(listId) {
 }
 
 async function upsertExt(base, name, data) {
+  if (local.get('extOff')) return false;
   try {
-    await graph(`${base}/${name}`, { method: 'PATCH', body: { '@odata.type': 'microsoft.graph.openTypeExtension', extensionName: name, data } });
+    try {
+      await graph(`${base}/${name}`, { method: 'PATCH', body: { '@odata.type': 'microsoft.graph.openTypeExtension', extensionName: name, data } });
+    } catch (e) {
+      if (e.status !== 404) throw e;
+      await graph(base, { method: 'POST', body: { '@odata.type': 'microsoft.graph.openTypeExtension', extensionName: name, data } });
+    }
+    return true;
   } catch (e) {
-    if (e.status !== 404) throw e;
-    await graph(base, { method: 'POST', body: { '@odata.type': 'microsoft.graph.openTypeExtension', extensionName: name, data } });
+    // Certains comptes refusent les données attachées : on continue sans (titre, date, statut, étapes restent synchronisés).
+    if (e.status === 400 || e.status === 403 || e.status === 501) { console.warn('Extensions To Do indisponibles', e); local.set('extOff', true); return false; }
+    throw e;
   }
 }
 
@@ -341,7 +355,7 @@ function applyTodoEdits(todos, listId) {
       n++;
       continue;
     }
-    if (!t.todo || t.todo.id !== item.id) { t.todo = { id: item.id, remoteMod: item.lastModifiedDateTime, syncedAt: t.todo?.syncedAt || 0 }; putTask(t, { silent: true, touch: false }); }
+    if (!t.todo || t.todo.id !== item.id) { t.todo = { ...(t.todo || {}), id: item.id, remoteMod: item.lastModifiedDateTime, syncedAt: t.todo?.syncedAt || 0 }; putTask(t, { silent: true, touch: false }); }
     if (item.lastModifiedDateTime === t.todo.remoteMod) continue;
     const remoteNewer = Date.parse(item.lastModifiedDateTime) > (t.updatedAt || 0);
     const due = item.dueDateTime?.dateTime ? item.dueDateTime.dateTime.slice(0, 10) : null;
@@ -372,16 +386,16 @@ async function pushTodos(listId, stats) {
       if (!o?.id) {
         if (t.status === 'done' && t.doneAt && t.doneAt < Date.now() - 30 * 864e5) continue; // anciennes tâches faites
         const created = await graph(base, { method: 'POST', body: todoPayload(t) });
-        t.todo = { id: created.id, remoteMod: null, syncedAt: 0 };
+        t.todo = { ...(o || {}), id: created.id, remoteMod: null, syncedAt: 0 };
         await upsertExt(`${base}/${created.id}/extensions`, EXT_TASK, packTask(t));
         const fresh = await graph(`${base}/${created.id}`);
-        t.todo = { id: created.id, remoteMod: fresh.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
+        t.todo = { ...t.todo, id: created.id, remoteMod: fresh.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
         putTask(t, { silent: true, touch: false });
         n++;
       } else if ((t.updatedAt || 0) > (o.syncedAt || 0)) {
         await upsertExt(`${base}/${o.id}/extensions`, EXT_TASK, packTask(t));
         const upd = await graph(`${base}/${o.id}`, { method: 'PATCH', body: todoPayload(t) });
-        t.todo = { id: o.id, remoteMod: upd.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
+        t.todo = { ...o, id: o.id, remoteMod: upd.lastModifiedDateTime, syncedAt: Math.max(Date.now(), t.updatedAt) };
         putTask(t, { silent: true, touch: false });
         n++;
       }
@@ -391,6 +405,56 @@ async function pushTodos(listId, stats) {
     }
   }
   return n;
+}
+
+// ---------- Étapes To Do (checklistItems) <-> sous-tâches ----------
+async function syncAllChecklists(listId, stats) {
+  let n = 0;
+  const base = `/me/todo/lists/${listId}/tasks`;
+  for (const t of tasks()) {
+    if (!t.todo?.id || t.status === 'done' || inAgenda(t)) continue;
+    try { n += await syncChecklist(t, `${base}/${t.todo.id}/checklistItems`, stats); }
+    catch (e) { if (e.status === 404) continue; throw e; }
+  }
+  return n;
+}
+
+async function syncChecklist(t, url, stats) {
+  const remote = await pages(url);
+  const known = new Set(t.todo.items || []);
+  const localNewer = (t.updatedAt || 0) > (t.todo.checkSync || 0);
+  let changed = 0;
+  const remoteIds = new Set(remote.map((r) => r.id));
+  for (const r of remote) {
+    const sub = t.subtasks.find((x) => x.todoItem === r.id);
+    if (sub) {
+      const same = sub.title === r.displayName && !!sub.done === !!r.isChecked;
+      if (same) continue;
+      if (localNewer) await graph(`${url}/${r.id}`, { method: 'PATCH', body: { displayName: sub.title, isChecked: !!sub.done } });
+      else { sub.title = r.displayName; sub.done = !!r.isChecked; if (sub.done && !sub.doneAt) sub.doneAt = Date.now(); changed++; }
+    } else if (known.has(r.id)) {
+      await ignore404(graph(`${url}/${r.id}`, { method: 'DELETE' })); stats.removed++; // supprimée dans l'application
+    } else {
+      t.subtasks.push({ id: `td-${r.id.slice(-12)}-${Date.now().toString(36)}`, title: r.displayName, done: !!r.isChecked, spent: 0, todoItem: r.id }); // ajoutée dans To Do
+      changed++;
+    }
+  }
+  for (const sub of [...t.subtasks]) {
+    if (sub.todoItem && !remoteIds.has(sub.todoItem)) {
+      if (known.has(sub.todoItem) && !localNewer) { t.subtasks = t.subtasks.filter((x) => x !== sub); changed++; continue; } // supprimée dans To Do
+      sub.todoItem = null;
+    }
+    if (!sub.todoItem) {
+      const c = await graph(url, { method: 'POST', body: { displayName: sub.title || '(sans titre)', isChecked: !!sub.done } });
+      sub.todoItem = c.id;
+    }
+  }
+  const now = Date.now();
+  t.todo.items = t.subtasks.map((x) => x.todoItem).filter(Boolean);
+  t.todo.checkSync = now;
+  if (changed) { t.updatedAt = now; t.todo.syncedAt = now; }
+  putTask(t, { silent: true, touch: false });
+  return changed;
 }
 
 // ---------- Agenda Outlook (tâches avec heure) ----------

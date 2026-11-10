@@ -954,3 +954,21 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .sub-sum b { color: var(--text); }
 .subtasks .sub-spent, .sub-new .sub-spent { width: 92px; flex: none; min-height: 34px; padding: 4px 8px; font-size: .84rem; text-align: right; }
 .sub-new input[data-newsub] { flex: 1; min-width: 0; }
+/* v2.2 : sous-tâches dans le Gantt */
+.subtasks li { flex-wrap: wrap; }
+.sub-dates { flex-basis: 100%; display: flex; align-items: center; gap: 6px; padding-left: 26px; font-size: .78rem; color: var(--muted); }
+.sub-dates input { width: 140px; min-height: 30px; padding: 2px 6px; font-size: .8rem; }
+.g-name.g-sub { padding-left: 34px; font-size: .78rem; color: var(--muted); background: color-mix(in srgb, var(--surface-2) 40%, transparent); }
+.g-name.g-sub .nm { color: var(--text); }
+.g-name.g-sub.done .nm { text-decoration: line-through; color: var(--muted); }
+.g-name.g-sub.late .nm { color: var(--danger); }
+.g-sub-ico { width: 14px; text-align: center; color: var(--muted); flex: none; }
+.g-subbar { position: absolute; height: 10px; border-radius: 5px; z-index: 3; cursor: pointer; background: color-mix(in srgb, var(--pc) 45%, var(--surface)); border: 1px solid color-mix(in srgb, var(--pc) 70%, transparent); }
+.g-subbar.done { background: var(--pc); opacity: .55; }
+.g-subbar.late { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 30%, var(--surface)); }
+.cg-subs { list-style: none; margin: 4px 0 0; padding: 0 0 0 16px; display: flex; flex-direction: column; gap: 3px; }
+.cg-subs li { display: grid; grid-template-columns: minmax(0, 45%) 1fr; gap: 8px; align-items: center; font-size: .74rem; color: var(--muted); }
+.cg-subs li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cg-subs li.done span { text-decoration: line-through; }
+.cg-track.sm { height: 6px; margin: 0; }
+.cg-subs .cg-track { display: block; }

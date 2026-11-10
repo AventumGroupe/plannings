@@ -7,12 +7,12 @@ import { openTaskEditor } from './editor.js';
 import { openProjectEditor } from './resources.js';
 import { enableDrag, makeGhost, dropTarget, autoScroll } from './drag.js';
 import { toast, slider, bindSliders, info } from './ui.js';
-import { esc, icon, parse, toDateStr, addDays, startOfDay, startOfWeek, sameDay, daysBetween, fmt, cap, isMobile, isoWeek, DAY, MIN } from './util.js';
+import { esc, icon, fmtDuration, parse, toDateStr, addDays, startOfDay, startOfWeek, sameDay, daysBetween, fmt, cap, isMobile, isoWeek, DAY, MIN } from './util.js';
 
 const ROW = 34;
 const ZOOMS = { day: { dayW: 34, label: 'Jours' }, week: { dayW: 13, label: 'Semaines' }, month: { dayW: 4, label: 'Mois' } };
 
-const G = Object.assign({ project: '', zoom: 'day', showDone: true, critical: true, collapsed: {}, mobileMode: 'compact' }, local.get('gantt', {}));
+const G = Object.assign({ project: '', zoom: 'day', showDone: true, critical: true, subs: true, collapsed: {}, mobileMode: 'compact' }, local.get('gantt', {}));
 const persist = () => local.set('gantt', G);
 
 // ---------- Données ----------
@@ -40,6 +40,7 @@ function rangeFor(gs) {
   let min = startOfDay(new Date()), max = addDays(min, 21);
   for (const g of gs) {
     for (const t of g.planned) { const s = tStart(t), e = tEnd(t); if (s < min) min = startOfDay(s); if (e > max) max = e; }
+    for (const t of g.planned.concat(g.unplanned)) for (const x of datedSubs(t)) { const [a, b] = subSpan(x); if (a < min) min = a; if (b > max) max = b; }
     if (g.p?.deadline) { const d = addDays(parse(g.p.deadline), 1); if (d > max) max = d; }
   }
   const from = startOfWeek(addDays(min, -2));
@@ -57,12 +58,15 @@ function buildRows(gs) {
     const total = g.planned.length + g.unplanned.length;
     rows.push({ type: 'project', key, p: g.p, s, e, progress: total ? done / total : 0, total });
     if (G.collapsed[key]) continue;
-    for (const t of g.planned) rows.push({ type: 'task', t });
-    for (const t of g.unplanned) rows.push({ type: 'unplanned', t });
+    for (const t of g.planned) { rows.push({ type: 'task', t }); if (G.subs) datedSubs(t).forEach((x) => rows.push({ type: 'sub', t, x })); }
+    for (const t of g.unplanned) { rows.push({ type: 'unplanned', t }); if (G.subs) datedSubs(t).forEach((x) => rows.push({ type: 'sub', t, x })); }
   }
   return rows;
 }
 
+/** Sous-tâches avec dates, triées. Fin incluse (journée). */
+const datedSubs = (t) => (t.subtasks || []).filter((x) => x.start).sort((a, b) => a.start.localeCompare(b.start));
+const subSpan = (x) => [parse(x.start), addDays(parse(x.end && x.end >= x.start ? x.end : x.start), 1)];
 const progressOf = (t) => t.status === 'done' ? 1 : spentOf(t) && t.estimate ? Math.min(1, spentOf(t) / t.estimate) : t.subtasks.length ? t.subtasks.filter((s) => s.done).length / t.subtasks.length : t.status === 'doing' ? 0.3 : 0;
 
 // ---------- Rendu complet (ordinateur, impression) ----------
@@ -131,6 +135,16 @@ function ganttHtml(rows, an, from, to, { dayW, nameW, print = false }) {
         const x = xOf(addDays(parse(p.deadline), 1));
         bars.push(`<div class="g-deadline" style="top:${y}px;left:${x}px;height:${ROW}px" title="Échéance du projet : ${fmt.date.format(parse(p.deadline))}"><span>${icon('alert', 12)}</span></div>`);
       }
+      return;
+    }
+    if (r.type === 'sub') {
+      const t = r.t, x = r.x, p = db.projects[t.projectId];
+      const [sa, sb] = subSpan(x);
+      const x1 = xOf(sa), x2 = Math.max(xOf(sb), x1 + 4);
+      const late = !x.done && sb < new Date();
+      names.push(`<div class="g-name g-sub ${x.done ? 'done' : ''} ${late ? 'late' : ''}" style="top:${y}px" data-open-task="${t.id}" title="${esc(x.title)} — sous-tâche de « ${esc(t.title)} »">
+        <span class="g-sub-ico">${x.done ? '✓' : '↳'}</span><span class="nm">${esc(x.title)}</span>${x.spent ? `<small>${esc(fmtDuration(x.spent))}</small>` : ''}</div>`);
+      bars.push(`<div class="g-subbar ${x.done ? 'done' : ''} ${late ? 'late' : ''}" style="top:${y + 12}px;left:${x1}px;width:${x2 - x1}px;--pc:${p?.color || 'var(--accent)'}" data-open-task="${t.id}" title="${esc(x.title)} · ${fmt.dateShort.format(sa)} → ${fmt.dateShort.format(new Date(sb - 1))}${x.spent ? ' · ' + fmtDuration(x.spent) + ' passées' : ''}"></div>`);
       return;
     }
     const t = r.t, a = an[t.id] || {};
@@ -228,6 +242,7 @@ function compactHtml(gs, an) {
               <span class="cg-dates">${fmt.dateShort.format(ts)}${sameDay(ts, new Date(te - 1)) ? '' : ` → ${fmt.dateShort.format(new Date(te - 1))}`}</span></div>
             <div class="cg-track"><i class="cg-bar" style="left:${pct(ts)}%;width:${Math.max(2, pct(te) - pct(ts))}%;--pc:${g.p?.color || 'var(--accent)'}"><b style="width:${progressOf(t) * 100}%"></b></i>
               ${s && today >= s && today <= e ? `<i class="cg-now" style="left:${pct(today)}%"></i>` : ''}</div>
+            ${G.subs && datedSubs(t).length ? `<ul class="cg-subs">${datedSubs(t).map((x) => { const [sa, sb] = subSpan(x); return `<li class="${x.done ? 'done' : ''}"><span>${x.done ? '✓' : '↳'} ${esc(x.title)}</span><i class="cg-track sm"><i class="cg-bar" style="left:${pct(sa)}%;width:${Math.max(2, pct(sb) - pct(sa))}%;--pc:${g.p?.color || 'var(--accent)'}"></i></i></li>`; }).join('')}</ul>` : ''}
             ${preds.length || del || a.late ? `<div class="cg-info">
               ${a.late ? `<span class="danger-text">${icon('alert', 13)} Dépasse l’échéance</span>` : a.critical && G.critical ? '<span class="warn-text">Chemin critique</span>' : ''}
               ${preds.length ? `<span>${icon('link', 13)} après ${esc(preds.join(', '))}</span>` : ''}
@@ -264,6 +279,7 @@ export function renderGantt(el) {
         ${compact ? '' : slider('zoom', { values: Object.keys(ZOOMS), labels: Object.values(ZOOMS).map((z) => z.label), value: G.zoom, ticks: 'labels', compact: true })}
         <label class="switch sm" title="Chemin critique"><input type="checkbox" data-g="critical" ${G.critical ? 'checked' : ''}><span></span> Critique</label>
         <label class="switch sm"><input type="checkbox" data-g="showDone" ${G.showDone ? 'checked' : ''}><span></span> Faites</label>
+        <label class="switch sm"><input type="checkbox" data-g="subs" ${G.subs ? 'checked' : ''}><span></span> Sous-tâches</label>
         ${info('gantt')}
         <span class="spacer"></span>
         ${lateCount ? `<span class="badge danger" title="Tâches qui finiront après leur échéance">${icon('alert', 13)} ${lateCount}</span>` : ''}
