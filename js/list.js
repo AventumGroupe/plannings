@@ -51,6 +51,7 @@ function row(t, an) {
   else if (a.critical) flags.push(`<span class="badge warn" title="Sur le chemin critique : aucune marge">Chemin critique</span>`);
   if (t.automate) flags.push(`<span class="badge accent" title="Candidate à l’automatisation">${icon('sync', 13)} À automatiser</span>`);
   if (t.slips) flags.push(`<span class="badge muted" title="Reportée automatiquement">Reportée ×${t.slips}</span>`);
+  if (t.mail) flags.push(`<span class="badge accent" title="Issue d’un mail marqué d’un drapeau">✉ Mail</span>`);
   return `
     <li class="task-row c-${category(t)} ${t.status === 'done' ? 'done' : ''} ${a.late ? 'is-late' : ''}" data-id="${t.id}">
       <button class="check ${t.status}" data-check aria-label="${t.status === 'done' ? 'Marquer à faire' : 'Marquer comme faite'}">${icon('check', 16)}</button>

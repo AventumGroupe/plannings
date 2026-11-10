@@ -19,7 +19,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.5.0';
+const VERSION = '2.6.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'journee', label: 'Journée', icon: 'today', render: renderToday },
@@ -209,7 +209,8 @@ function renderSettings(el) {
           <div class="row wrap gap">
             <label class="switch"><input type="checkbox" data-mstodo ${ms.useTodo() ? 'checked' : ''}><span></span> Microsoft To Do</label>
             <label class="switch"><input type="checkbox" data-msagenda ${ms.useAgenda() ? 'checked' : ''}><span></span> Agenda Outlook</label>
-            ${info('', 'Microsoft To Do : les tâches sans heure précise vont dans la liste « Plannings » (titre, échéance, statut, importance, rappel) et leurs sous-tâches deviennent des « étapes » To Do, dans les deux sens. Agenda Outlook : les tâches avec une heure précise deviennent des rendez-vous. Si l’agenda est désactivé, toutes les tâches vont dans To Do.')}
+            <label class="switch"><input type="checkbox" data-msflags ${ms.useFlags() ? 'checked' : ''}><span></span> Mails marqués ${icon('alert', 14)}</label>
+            ${info('', 'Microsoft To Do : les tâches sans heure précise vont dans la liste « Plannings » (titre, échéance, statut, importance, rappel) et leurs sous-tâches deviennent des « étapes » To Do, dans les deux sens. Agenda Outlook : les tâches avec une heure précise deviennent des rendez-vous. Si l’agenda est désactivé, toutes les tâches vont dans To Do. Mails marqués : chaque mail marqué d’un drapeau dans Outlook devient une tâche (15 min, à trier) ; la cocher dans l’application retire le drapeau.')}
           </div>
           <label class="field" ${ms.useAgenda() ? '' : 'hidden'}><span>Calendrier</span><select data-cal><option value="">Calendrier principal</option></select></label>
           <div class="row wrap gap">
@@ -291,8 +292,8 @@ function renderSettings(el) {
       else disableNotifications();
       render(); return;
     }
-    if (e.target.matches('[data-mstodo]') || e.target.matches('[data-msagenda]')) {
-      ms.setUse(e.target.matches('[data-mstodo]') ? 'todo' : 'agenda', e.target.checked);
+    if (e.target.matches('[data-mstodo]') || e.target.matches('[data-msagenda]') || e.target.matches('[data-msflags]')) {
+      ms.setUse(e.target.matches('[data-mstodo]') ? 'todo' : e.target.matches('[data-msflags]') ? 'flags' : 'agenda', e.target.checked);
       render(); manualSync(); return;
     }
     if (e.target.matches('[data-cal]')) { ms.setCalendarId(e.target.value); toast('Calendrier choisi. Synchronisation…'); manualSync(); }

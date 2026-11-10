@@ -50,7 +50,8 @@ export const isConnected = () => !!account;
 export const needsReauth = () => status.state === 'reauth';
 export const useTodo = () => local.get('msTodo', true);
 export const useAgenda = () => local.get('msAgenda', true);
-export const setUse = (k, v) => local.set(k === 'todo' ? 'msTodo' : 'msAgenda', !!v);
+export const setUse = (k, v) => local.set({ todo: 'msTodo', agenda: 'msAgenda', flags: 'msFlags' }[k] || 'msAgenda', !!v);
+export const useFlags = () => local.get('msFlags', true);
 export const accountLabel = () => account ? (account.name ? `${account.name} (${account.username})` : account.username) : '';
 
 class GraphError extends Error {
@@ -238,7 +239,7 @@ export function syncAll({ manual = false } = {}) {
       step = 'Lecture de l’agenda'; const events = agendaOn ? await readEvents(from, to) : { ours: [], external: [] };
 
       // 2. Fusion (pour chaque élément, la version la plus récente gagne)
-      const remote = { tasks: {}, projects: meta?.projects || {}, resources: meta?.resources || {}, deleted: meta?.deleted || {}, settings: meta?.settings };
+      const remote = { tasks: {}, projects: meta?.projects || {}, resources: meta?.resources || {}, templates: meta?.templates || {}, deleted: meta?.deleted || {}, settings: meta?.settings };
       const keep = (obj) => { if (obj?.id && (!remote.tasks[obj.id] || (obj.updatedAt || 0) > (remote.tasks[obj.id].updatedAt || 0))) remote.tasks[obj.id] = obj; };
       todos.forEach((x) => keep(x.data));
       events.ours.forEach((x) => keep(x.data));
@@ -256,6 +257,7 @@ export function syncAll({ manual = false } = {}) {
       else for (const t of tasks()) if (t.outlook?.id) { await ignore404(graph(`/me/events/${t.outlook.id}`, { method: 'DELETE' })); t.outlook = null; putTask(t, { silent: true, touch: false }); stats.removed++; }
       step = 'Envoi vers To Do'; if (todoOn) stats.pushed += await pushTodos(listId, stats);
       step = 'Étapes To Do'; if (todoOn) stats.pulled += await syncAllChecklists(listId, stats);
+      step = 'Mails marqués'; if (useFlags()) stats.pulled += await syncFlagged().catch((e) => { console.warn('Mails marqués indisponibles', e); return 0; });
       step = 'Suppressions'; await pushDeleted(stats);
       step = 'Enregistrement des réglages'; if (todoOn) await writeMeta(listId, meta);
       step = '';
@@ -275,6 +277,49 @@ export function syncAll({ manual = false } = {}) {
     }
   })();
   return running;
+}
+
+// ---------- Mails marqués d'un drapeau -> tâches ----------
+const mailTaskId = (todoId) => { let h = 5381; for (let i = 0; i < todoId.length; i++) h = ((h * 33) ^ todoId.charCodeAt(i)) >>> 0; return 'mail-' + h.toString(36) + todoId.length.toString(36); };
+
+async function syncFlagged() {
+  let listId = local.get('flagListId');
+  if (!listId) {
+    const lists = await pages('/me/todo/lists');
+    const l = lists.find((x) => x.wellknownListName === 'flaggedEmails');
+    if (!l) return 0;
+    listId = l.id; local.set('flagListId', listId);
+  }
+  const base = `/me/todo/lists/${listId}/tasks`;
+  let items;
+  try { items = await pages(`${base}?$expand=linkedResources`); } catch (e) { if (e.status === 404) { local.set('flagListId', ''); return 0; } items = await pages(base); }
+  let n = 0;
+  const byTodo = new Map(tasks().filter((t) => t.mail?.todoId).map((t) => [t.mail.todoId, t]));
+  for (const it of items) {
+    const id = mailTaskId(it.id);
+    const t = byTodo.get(it.id) || db.tasks[id];
+    const done = it.status === 'completed';
+    const link = (it.linkedResources || []).find((r) => r.webUrl)?.webUrl || '';
+    if (!t) {
+      if (done || db.deleted[id]) continue;
+      const high = it.importance === 'high';
+      const nt = newTask({
+        id, title: it.title || 'Mail à traiter', urgency: high ? 4 : 3, importance: high ? 4 : 3, energy: 3, estimate: 15,
+        due: it.dueDateTime?.dateTime ? it.dueDateTime.dateTime.slice(0, 10) : null,
+        notes: link ? `Mail : ${link}` : 'Issu d’un mail marqué d’un drapeau dans Outlook.',
+        mail: { todoId: it.id, listId, webUrl: link },
+      });
+      putTask(nt, { silent: true }); n++;
+      continue;
+    }
+    if (done && t.status !== 'done') { t.status = 'done'; t.doneAt = Date.now(); putTask(t, { silent: true }); n++; }
+    else if (!done && t.status === 'done' && !t.mail?.closed) {
+      // Terminée dans l'application : on retire le drapeau dans Outlook
+      await ignore404(graph(`${base}/${it.id}`, { method: 'PATCH', body: { status: 'completed' } }));
+      t.mail = { ...t.mail, closed: true }; putTask(t, { silent: true, touch: false });
+    }
+  }
+  return n;
 }
 
 // ---------- Liste To Do « Plannings » ----------
@@ -301,7 +346,7 @@ async function readMeta(listId) {
 }
 
 async function writeMeta(listId) {
-  const data = JSON.stringify({ projects: db.projects, resources: db.resources, deleted: db.deleted, settings: db.settings });
+  const data = JSON.stringify({ projects: db.projects, resources: db.resources, templates: db.templates || {}, deleted: db.deleted, settings: db.settings });
   if (data === local.get('metaPushed')) return;
   await upsertExt(`/me/todo/lists/${listId}/extensions`, EXT_META, data);
   local.set('metaPushed', data);
@@ -425,6 +470,7 @@ async function pushTodos(listId, stats) {
   const base = `/me/todo/lists/${listId}/tasks`;
   for (const t of tasks()) {
     const o = t.todo;
+    if (t.mail && !o?.id) continue; // tâche issue d'un mail marqué : elle vit déjà dans To Do (« E-mails marqués »)
     try {
       if (inAgenda(t)) {
         if (o?.id) { await ignore404(graph(`${base}/${o.id}`, { method: 'DELETE' })); t.todo = null; putTask(t, { silent: true, touch: false }); stats.removed++; }
