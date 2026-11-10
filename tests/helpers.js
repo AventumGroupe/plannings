@@ -15,7 +15,7 @@ async function openApp(page, { at = '2026-11-10T09:40:00', hash = '' } = {}) {
 function run(page, fn, arg) {
   return page.evaluate(async ({ src, arg }) => {
     const m = {};
-    for (const n of ['store', 'sched', 'util', 'templates', 'delegation', 'today', 'notify', 'focus', 'review', 'advice', 'suggest']) m[n] = await import(`./js/${n}.js`);
+    for (const n of ['store', 'sched', 'util', 'templates', 'delegation', 'today', 'notify', 'focus', 'review', 'advice', 'suggest', 'rh']) m[n] = await import(`./js/${n}.js`);
     // eslint-disable-next-line no-new-func
     return new Function('m', 'arg', `return (${src})(m, arg);`)(m, arg);
   }, { src: fn.toString(), arg });

@@ -1,7 +1,7 @@
 // Onglet « Ma journée » : énergie du moment, la tâche à faire maintenant,
 // le déroulé de la journée (rendez-vous Outlook + tâches) et une proposition de journée en un clic.
 
-import { db, tasks, putTask, save, local, outlookEvents, score, category, catInfo, ENERGY, remainingOf, progressOf } from './store.js';
+import { db, tasks, putTask, save, local, outlookEvents, ownAbsentOn, rhEvents, score, category, catInfo, ENERGY, remainingOf, progressOf } from './store.js';
 import { tStart, tEnd, setSpan, busyOn, propagate, analyze } from './sched.js';
 import { sessionOf } from './advice.js';
 import { reviewDue } from './review.js';
@@ -177,6 +177,7 @@ export function renderToday(el) {
           <small>${fmtDuration(Math.round(st.planned))} prévues · ${fmtDuration(Math.round(st.free))} libres${st.doneToday ? ` · ${st.doneToday} faite${st.doneToday > 1 ? 's' : ''} aujourd’hui` : ''}</small></div>
         ${ring(st.pct, 56, 'lg')}
       </header>
+      ${ownAbsentOn(todayStr()) ? `<div class="card review-banner">${icon('sun', 20)}<div><b>${esc(rhEvents().find((x) => x.own && x.debut <= todayStr() && x.fin >= todayStr())?.titre || 'Absence')} aujourd’hui</b><span>Rien n’est proposé pour cette journée. Profitez-en !</span></div></div>` : ''}
       ${reviewDue() ? `<a class="card review-banner" href="#journee/revue">${icon('check', 20)}<div><b>C’est l’heure de la revue de la semaine</b><span>15 minutes pour boucler la semaine et préparer la suivante.</span></div><span class="btn primary sm">Commencer</span></a>` : ''}
 
       <div class="card energy-now">

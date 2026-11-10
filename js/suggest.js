@@ -6,6 +6,7 @@ import { tStart, tEnd, setSpan, proposeSlot, analyze, propagate, findFreeSlot } 
 import { fmt, cap, sameDay, addDays, startOfDay, toDateStr, fmtDuration, MIN, HOUR } from './util.js';
 import { delegateTo, followUpDue, nudgeHref, recordNudge } from './delegation.js';
 import { reviewDue } from './review.js';
+import { absenceOf } from './rh.js';
 import { sessionOf, planSessions, batchSmall, rhythmOf } from './advice.js';
 
 const DISMISS_DAYS = 7;
@@ -131,7 +132,7 @@ export function suggestions(analysis = analyze()) {
         ? `« ${t.title} » est urgente et importante mais plombante : confiez-la ou automatisez-la.`
         : `« ${t.title} » est importante, pas urgente, mais plombante : planifiez-la dans le temps avec un collaborateur.`,
       actions: team.length
-        ? team.slice(0, 4).map((p) => ({ label: `Confier à ${p.name}`, run: () => { delegateTo(t, p.id); return `Confiée à ${p.name}. Elle apparaît dans « En attente de… ».`; } }))
+        ? team.filter((p) => !absenceOf(p.name)).concat(team.filter((p) => absenceOf(p.name))).slice(0, 4).map((p) => ({ label: `Confier à ${p.name}${absenceOf(p.name) ? ' (absent)' : ''}`, run: () => { delegateTo(t, p.id); return `Confiée à ${p.name}. Elle apparaît dans « En attente de… ».`; } }))
         : [{ label: 'Ajouter une personne', href: '#ressources' }],
     });
   }

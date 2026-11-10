@@ -1172,3 +1172,27 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .ok-msg { padding: 12px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 15%, transparent); }
 .rv-end { text-align: center; padding: 20px 0; }
 .rv-end .big-tom span { font-size: 3rem; }
+/* v2.8 : assistant */
+.as-btn { color: var(--accent); }
+.as-sheet .sheet-body { display: flex; flex-direction: column; gap: 8px; min-height: min(70vh, 640px); }
+.as-log { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; max-height: 60vh; }
+.as-msg { display: flex; flex-direction: column; gap: 6px; }
+.as-msg.user { align-items: flex-end; }
+.as-bubble { max-width: 88%; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); line-height: 1.45; }
+.as-msg.user .as-bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.as-msg.assistant .as-bubble { border-bottom-left-radius: 4px; }
+.as-bubble.typing { display: flex; gap: 4px; }
+.as-bubble.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: asdot 1s infinite; }
+.as-bubble.typing i:nth-child(2) { animation-delay: .15s; } .as-bubble.typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes asdot { 50% { opacity: .2; transform: translateY(-2px); } }
+.as-acts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 92%; }
+.as-acts li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.as-acts li > span:first-child { flex: 1; display: flex; flex-direction: column; }
+.as-acts li small { color: var(--muted); font-size: .76rem; }
+.as-acts li.done { opacity: .6; }
+.as-btns { display: flex; gap: 4px; align-items: center; }
+.as-form { display: flex; gap: 8px; align-items: flex-end; }
+.as-form textarea { flex: 1; resize: none; }
+.as-note { margin: 0; }
+.as-empty { text-align: center; color: var(--muted); padding: 24px 8px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.as-sugg { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }

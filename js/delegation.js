@@ -4,6 +4,7 @@
 
 import { db, tasks, putTask } from './store.js';
 import { addWorkDays } from './templates.js';
+import { delegateAbsence, absenceLabel } from './rh.js';
 import { esc, icon, toDateStr, fmt, cap, parse, startOfDay, daysBetween } from './util.js';
 
 const today = () => toDateStr(new Date());
@@ -72,7 +73,7 @@ export function waitingHtml(open) {
           const n = (t.nudges || []).length;
           return `<li class="${late ? 'late' : ''}">
             <button class="link wait-title" data-open-id="${t.id}">${esc(t.title)}</button>
-            <small>confiée ${since(t.delegatedAt)}${t.followUp ? ` · retour ${late ? '<b>' : ''}${cap(fmt.dayShort.format(parse(t.followUp)))}${late ? '</b>' : ''}` : ''}${n ? ` · ${n} relance${n > 1 ? 's' : ''}` : ''}</small>
+            <small>${delegateAbsence(t) ? `<b class="danger-text">${esc(absenceLabel(delegateAbsence(t)))}</b> · ` : ''}confiée ${since(t.delegatedAt)}${t.followUp ? ` · retour ${late ? '<b>' : ''}${cap(fmt.dayShort.format(parse(t.followUp)))}${late ? '</b>' : ''}` : ''}${n ? ` · ${n} relance${n > 1 ? 's' : ''}` : ''}</small>
             <span class="wait-acts">
               <a class="btn sm ${late ? 'primary' : 'ghost'}" href="${nudgeHref(t)}" data-nudge="${t.id}">${icon('bell', 14)} Relancer</a>
               <button class="btn sm ghost" data-received="${t.id}">${icon('check', 14)} Reçu</button>

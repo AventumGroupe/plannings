@@ -7,6 +7,7 @@
 import { db, tasks, newTask, putTask, save, people, category, catInfo, isLeader, spentOf, remainingOf } from './store.js';
 import { proposeSlot, findFreeSlot, setSpan, tStart, tEnd, propagate, completeTask } from './sched.js';
 import { delegateTo } from './delegation.js';
+import { absenceOf } from './rh.js';
 import { esc, icon, fmt, cap, fmtDuration, addDays, addMinutes, startOfDay, MIN } from './util.js';
 
 export const SOURCES = [
@@ -51,7 +52,7 @@ export function adviceFor(t) {
   const opts = [];
   const sessionsAct = { label: long ? `Planifier les ${r.n} séances` : 'Planifier', act: 'sessions' };
   const intent = `« Si c’est ${plomb ? `demain ${db.settings.dayStart} h` : 'l’heure prévue'}, alors je commence ${long ? 'la séance 1' : ''} de “${t.title}”, téléphone en silencieux. »`;
-  const delegateActs = leader && team.length ? team.slice(0, 3).map((p) => ({ label: `Confier à ${p.name}`, act: `delegate:${p.id}` })) : [];
+  const delegateActs = leader && team.length ? team.filter((p) => !absenceOf(p.name)).concat(team.filter((p) => absenceOf(p.name))).slice(0, 3).map((p) => ({ label: `Confier à ${p.name}${absenceOf(p.name) ? ' (absent)' : ''}`, act: `delegate:${p.id}` })) : [];
   const automate = {
     key: 'auto', title: 'Automatiser',
     text: leader

@@ -3,7 +3,7 @@
 //   relances de délégation, revue du vendredi, fin de séance) : elles arrivent même application fermée.
 // - Version web : l'application affiche les rappels tant qu'elle est ouverte (ou en arrière-plan récent).
 
-import { db, tasks, local } from './store.js';
+import { db, tasks, local, ownAbsentOn } from './store.js';
 import { tStart, tEnd } from './sched.js';
 import { fmt, sameDay, toDateStr, addDays, startOfDay, MIN } from './util.js';
 
@@ -87,7 +87,7 @@ export function upcoming(days = 7, now = Date.now()) {
   }
   for (let i = 0; i <= days; i++) {
     const day = addDays(startOfDay(new Date(now)), i);
-    if (!S.workDays.includes(day.getDay())) continue;
+    if (!S.workDays.includes(day.getDay()) || ownAbsentOn(toDateStr(day))) continue;
     const at = new Date(day); at.setHours(S.dayStart, 0, 0, 0);
     const body = digestFor(day);
     if (body) add(`digest:${toDateStr(day)}`, at.getTime(), 'Votre journée', body, './#journee');

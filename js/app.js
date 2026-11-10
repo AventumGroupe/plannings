@@ -5,6 +5,7 @@ import { rollOverdue, propagate } from './sched.js';
 import { renderList } from './list.js';
 import { renderMatrix } from './matrix.js';
 import { renderToday } from './today.js';
+import { rhSync, rhConfigured, rhInfo, rhLink, setRhLink, parseLink } from './rh.js';
 import { resumeFocus } from './focus.js';
 import { renderCalendar, calendarRoute, setCalendarHooks } from './calendar.js';
 import { renderGantt } from './gantt.js';
@@ -19,7 +20,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.7.0';
+const VERSION = '2.8.0';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'journee', label: 'Journée', icon: 'today', render: renderToday },
@@ -78,6 +79,7 @@ function shell() {
       <a class="brand" href="#taches"><img src="icons/icon.svg" alt="" width="28" height="28"><span>Gestion des plannings</span></a>
       <nav class="tabs" aria-label="Navigation">${nav}</nav>
       <span class="spacer"></span>
+      <button class="icon-btn as-btn" data-assistant title="Assistant" aria-label="Assistant">${icon('spark', 20)}</button>
       <button class="sync-ind" data-syncnow title="Synchronisation"></button>
     </header>
     <main id="view" tabindex="-1"></main>
@@ -85,6 +87,7 @@ function shell() {
     <button class="fab" data-add aria-label="Nouvelle tâche">${icon('plus', 26)}</button>`;
   document.body.addEventListener('click', (e) => {
     if (e.target.closest('[data-add]')) openTaskEditor();
+    if (e.target.closest('[data-assistant]')) import('./assistant.js').then((m) => m.openAssistant());
     if (e.target.closest('[data-syncnow]')) {
       if (ms.needsReauth()) ms.reconnect(); else if (ms.isConnected() || ghConfigured()) manualSync(); else location.hash = '#reglages/sync';
     }
@@ -246,6 +249,15 @@ function renderSettings(el) {
         </div>
       </section>
 
+      <section class="card set" data-rh-card>
+        <h3>${icon('people', 18)} Plateforme RH (congés et absences) ${info('', 'Collez votre lien « Mon agenda » de la plateforme RH Aventum. Plannings lit alors vos congés et absences (et ceux de l’équipe pour le gérant) : ces jours ne reçoivent plus de propositions, et une alerte prévient si vous déléguez à quelqu’un d’absent. Le même lien active l’assistant. Il reste sur cet appareil ; régénérez-le dans la plateforme pour couper l’accès.')}</h3>
+        ${rhConfigured() ? `<p class="${rhInfo()?.error ? 'warn-text' : 'ok-text'}">${icon(rhInfo()?.error ? 'alert' : 'check', 16)} ${rhInfo()?.error ? esc(rhInfo().error) : `Reliée${rhInfo()?.nom ? ` : <b>${esc(rhInfo().nom)}</b>` : ''}${rhInfo()?.at ? ` · ${fmt.time.format(new Date(rhInfo().at))}` : ''}`}</p>` : '<p class="muted sm">Plateforme RH › Mon agenda › créer mon lien, puis copiez-le ici.</p>'}
+        <div class="row gap-sm wrap">
+          <input type="url" data-rhlink placeholder="https://…/agenda/….ics" value="${esc(rhLink())}" style="flex:1 1 260px" aria-label="Lien Mon agenda">
+          ${rhConfigured() ? `<button class="btn ghost sm" data-act="rhsync">${icon('sync', 16)} Actualiser</button><a class="btn ghost sm" href="${esc(parseLink(rhLink()).base)}/mon-agenda" target="_blank" rel="noopener">Ouvrir</a>` : ''}
+        </div>
+      </section>
+
       <section class="card set">
         <h3>${icon('bell', 18)} Rappels ${info('rappels')}</h3>
         ${!notifSupported() ? '<p class="muted">Non pris en charge.</p>'
@@ -296,6 +308,13 @@ function renderSettings(el) {
     if (e.target.matches('[data-mstodo]') || e.target.matches('[data-msagenda]') || e.target.matches('[data-msflags]')) {
       ms.setUse(e.target.matches('[data-mstodo]') ? 'todo' : e.target.matches('[data-msflags]') ? 'flags' : 'agenda', e.target.checked);
       render(); manualSync(); return;
+    }
+    if (e.target.matches('[data-rhlink]')) {
+      const v = e.target.value.trim();
+      if (v && !parseLink(v)) { toast('Lien attendu : https://…/agenda/<code>.ics (Plateforme RH › Mon agenda).'); return; }
+      const ok = await setRhLink(v); render();
+      toast(!v ? 'Plateforme RH déliée.' : ok ? 'Plateforme RH reliée : congés et absences chargés.' : `Lien enregistré, mais : ${rhInfo()?.error || 'lecture impossible'}`);
+      return;
     }
     if (e.target.matches('[data-cal]')) { ms.setCalendarId(e.target.value); toast('Calendrier choisi. Synchronisation…'); manualSync(); }
     if (e.target.matches('[data-clientid]')) { const v = e.target.value.trim(); if (v && !/^[0-9a-f-]{36}$/i.test(v)) { toast('Format attendu : 00000000-0000-0000-0000-000000000000.'); return; } ms.setClientId(v); render(); }
@@ -348,6 +367,7 @@ function renderSettings(el) {
     if (act === 'export') download(`gestion-plannings-${toDateStr(new Date())}.json`, exportJson());
     if (act === 'notif') { const p = await enableNotifications(); toast(p === 'granted' ? 'Notifications activées.' : 'Notifications refusées.'); render(); }
     if (act === 'nonotif') { disableNotifications(); render(); }
+    if (act === 'rhsync') { const ok = await rhSync(true); render(); toast(ok ? 'Congés et absences actualisés.' : `Plateforme RH : ${rhInfo()?.error || 'lecture impossible'}`); }
     if (act === 'testnotif') show('Gestion des plannings', 'Les rappels fonctionnent 👍', 'test');
     if (act === 'install' && installEvent) { installEvent.prompt(); await installEvent.userChoice; installEvent = null; render(); }
     if (act === 'demo') { loadDemo(); toast('Exemple chargé : voyez la liste, le calendrier et le Gantt.'); location.hash = '#gantt'; }
@@ -416,6 +436,9 @@ async function start() {
   setInterval(() => { if (rollOverdue().length) toast('Des tâches en retard ont été reportées.'); }, 10 * 60 * 1000);
   startReminders();
   resumeFocus();
+  rhSync(true).then((ok) => { if (ok) rerender(); });
+  setInterval(() => { if (!document.hidden) rhSync().then((ok) => { if (ok) rerender(); }); }, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) rhSync().then((ok) => { if (ok) rerender(); }); });
 
   // Synchronisation provisoire entre appareils (dépôt GitHub privé)
   if (ghConfigured()) ghSync();

@@ -8,6 +8,7 @@ import { tStart, tEnd, setSpan, shiftTo, requiredStart, propagate, succsOf, comp
 import { openDialog, confirmDialog, toast, slider, bindSliders, info, LV, EN } from './ui.js';
 import { adviceHtml, runAdvice } from './advice.js';
 import { delegateTo, nudgeHref } from './delegation.js';
+import { delegateAbsence, absenceLabel } from './rh.js';
 import { esc, icon, uid, parse, toLocal, toDateStr, addMinutes, addDays, fmt, cap, fmtDuration, MIN } from './util.js';
 
 const DURATIONS = [2, 5, 10, 15, 25, 30, 45, 50, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000, 3600, 4800, 6000, 7200, 9600, 12000];
@@ -83,7 +84,8 @@ export function openTaskEditor(idOrPreset = null) {
   function delegHtml() {
     if (!d.delegate) return '';
     const n = (d.nudges || []).length;
-    return `<div class="row gap-sm wrap deleg-row">
+    const abs = delegateAbsence(d);
+    return `${abs ? `<p class="warn-text">${icon('alert', 16)} ${esc(db.resources[d.delegate]?.name || '')} est ${esc(absenceLabel(abs))} (plateforme RH).</p>` : ''}<div class="row gap-sm wrap deleg-row">
       <label class="field"><span>Retour attendu</span><input type="date" data-f="followUp" value="${esc(d.followUp || '')}"></label>
       <a class="btn sm ghost" href="${nudgeHref(d)}">${icon('bell', 14)} Relancer</a>
       ${d.delegatedAt ? `<small class="muted">Confiée le ${fmt.dateShort.format(new Date(d.delegatedAt))}${n ? ` · ${n} relance${n > 1 ? 's' : ''}` : ''}</small>` : ''}

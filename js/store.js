@@ -97,6 +97,16 @@ export const local = {
 };
 /** Événements Outlook (hors tâches) mis en cache pour l'affichage hors connexion. */
 export const outlookEvents = () => local.get('outlookEvents', []);
+/** Congés et absences venant de la plateforme RH (voir rh.js) : { id, debut, fin, titre, type, own, who } */
+export const rhEvents = () => local.get('rhEvents', []);
+/** Événements extérieurs affichés : Outlook + absences RH (journées entières). */
+export const externalEvents = () => outlookEvents().concat(rhEvents().map((e) => {
+  const end = new Date(e.fin + 'T00:00'); end.setDate(end.getDate() + 1);
+  const p = (n) => String(n).padStart(2, '0');
+  return { id: 'rh-' + e.id, subject: e.titre, start: e.debut + 'T00:00', end: `${end.getFullYear()}-${p(end.getMonth() + 1)}-${p(end.getDate())}T00:00`, isAllDay: true, showAs: e.own ? 'oof' : 'free', rh: true, location: 'Plateforme RH' };
+}));
+/** Jour d'absence de l'utilisateur (congé ou absence) ? */
+export const ownAbsentOn = (dateStr) => rhEvents().some((e) => e.own && (e.type === 'conge' || e.type === 'absence') && e.debut <= dateStr && e.fin >= dateStr);
 
 // ---------- Accès ----------
 export const tasks = () => Object.values(db.tasks);

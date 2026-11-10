@@ -1,6 +1,6 @@
 // Vue calendrier : jour / semaine / mois, glisser-déposer, événements Outlook.
 
-import { db, tasks, putTask, save, local, outlookEvents, score, ENERGY } from './store.js';
+import { db, tasks, putTask, save, local, externalEvents as outlookEvents, score, ENERGY } from './store.js';
 import { tStart, tEnd, setSpan, propagate, requiredStart, findFreeSlot, analyze } from './sched.js';
 import { openTaskEditor } from './editor.js';
 import { enableDrag, makeGhost, dropTarget, autoScroll } from './drag.js';

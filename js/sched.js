@@ -1,7 +1,7 @@
 // Moteur de planification : dates des tâches, dépendances (fin -> début),
 // décalage des retards, chemin critique, créneaux libres, récurrence.
 
-import { db, tasks, putTask, save, newTask, outlookEvents } from './store.js';
+import { db, tasks, putTask, save, newTask, outlookEvents, ownAbsentOn } from './store.js';
 import { parse, toLocal, toDateStr, addDays, startOfDay, sameDay, daysBetween, roundUp, addMinutes, uid, MIN, DAY } from './util.js';
 
 // ---------- Bornes d'une tâche ----------
@@ -219,6 +219,7 @@ export function analyze() {
 export function busyOn(day, exceptId = null) {
   const ds = startOfDay(day), de = addDays(ds, 1);
   const out = [];
+  if (ownAbsentOn(toDateStr(ds))) return [[ds, de]]; // congé ou absence (plateforme RH) : journée indisponible
   for (const t of tasks()) {
     if (!t.start || t.allDay || t.status === 'done' || t.id === exceptId) continue;
     const s = tStart(t), e = tEnd(t);
