@@ -1,18 +1,19 @@
 // Vue Gantt : projets, barres, dépendances fin -> début, chemin critique,
 // décalage en cascade, vue compacte pour téléphone, export PDF.
 
-import { db, tasks, projects, putTask, save, local, RES_TYPES, spentOf } from './store.js';
+import { db, tasks, projects, putTask, save, local, RES_TYPES, spentOf, progressOf } from './store.js';
 import { tStart, tEnd, setSpan, shiftTo, propagate, requiredStart, analyze, wouldCycle } from './sched.js';
 import { openTaskEditor } from './editor.js';
 import { openProjectEditor } from './resources.js';
 import { enableDrag, makeGhost, dropTarget, autoScroll } from './drag.js';
 import { toast, slider, bindSliders, info } from './ui.js';
+import { pertHtml } from './pert.js';
 import { esc, icon, fmtDuration, parse, toDateStr, addDays, startOfDay, startOfWeek, sameDay, daysBetween, fmt, cap, isMobile, isoWeek, DAY, MIN } from './util.js';
 
 const ROW = 34;
 const ZOOMS = { day: { dayW: 34, label: 'Jours' }, week: { dayW: 13, label: 'Semaines' }, month: { dayW: 4, label: 'Mois' } };
 
-const G = Object.assign({ project: '', zoom: 'day', showDone: true, critical: true, subs: true, collapsed: {}, mobileMode: 'compact' }, local.get('gantt', {}));
+const G = Object.assign({ view: 'gantt', project: '', zoom: 'day', showDone: true, critical: true, subs: true, collapsed: {}, mobileMode: 'compact' }, local.get('gantt', {}));
 const persist = () => local.set('gantt', G);
 
 // ---------- Données ----------
@@ -67,7 +68,6 @@ function buildRows(gs) {
 /** Sous-tâches avec dates, triées. Fin incluse (journée). */
 const datedSubs = (t) => (t.subtasks || []).filter((x) => x.start).sort((a, b) => a.start.localeCompare(b.start));
 const subSpan = (x) => [parse(x.start), addDays(parse(x.end && x.end >= x.start ? x.end : x.start), 1)];
-const progressOf = (t) => t.status === 'done' ? 1 : spentOf(t) && t.estimate ? Math.min(1, spentOf(t) / t.estimate) : t.subtasks.length ? t.subtasks.filter((s) => s.done).length / t.subtasks.length : t.status === 'doing' ? 0.3 : 0;
 
 // ---------- Rendu complet (ordinateur, impression) ----------
 function ganttHtml(rows, an, from, to, { dayW, nameW, print = false }) {
@@ -152,7 +152,7 @@ function ganttHtml(rows, an, from, to, { dayW, nameW, print = false }) {
     const del = t.delegate && db.resources[t.delegate];
     names.push(`<div class="g-name ${t.status === 'done' ? 'done' : ''} ${a.late ? 'late' : ''}" style="top:${y}px" data-open-task="${t.id}" title="${esc(t.title)}">
       <i class="edot e${t.energy}"></i><span class="nm">${esc(t.title)}</span>
-      ${r.type === 'unplanned' ? '<small class="muted">non planifiée</small>' : del ? `<small>${esc(del.name)}</small>` : ''}</div>`);
+      ${r.type === 'unplanned' ? '<small class="muted">non planifiée</small>' : del ? `<small>${esc(del.name)}</small>` : ''}<small class="g-pct">${Math.round(progressOf(t) * 100)} %</small></div>`);
     if (r.type === 'unplanned') {
       if (!print) bars.push(`<div class="g-plan-row" style="top:${y}px;height:${ROW}px" data-plan-row="${t.id}" title="Cliquez sur un jour pour planifier « ${esc(t.title)} »"></div>`);
       return;
@@ -261,7 +261,8 @@ export function renderGantt(el) {
   const [from, to] = rangeFor(gs);
   const rows = buildRows(gs);
   const mobile = isMobile();
-  const compact = mobile && G.mobileMode === 'compact';
+  const pert = G.view === 'pert';
+  const compact = !pert && mobile && G.mobileMode === 'compact';
   const nameW = mobile ? 130 : 260;
   const dayW = ZOOMS[G.zoom].dayW;
   const lateCount = Object.entries(an).filter(([id, a]) => a.late && (!G.project || db.tasks[id]?.projectId === G.project)).length;
@@ -275,8 +276,10 @@ export function renderGantt(el) {
           ${projects().map((p) => `<option value="${p.id}" ${G.project === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
           <option value="_none" ${G.project === '_none' ? 'selected' : ''}>Sans projet</option>
         </select>
-        ${mobile ? `<label class="switch sm"><input type="checkbox" data-full ${!compact ? 'checked' : ''}><span></span> Gantt complet</label>` : ''}
-        ${compact ? '' : slider('zoom', { values: Object.keys(ZOOMS), labels: Object.values(ZOOMS).map((z) => z.label), value: G.zoom, ticks: 'labels', compact: true })}
+        ${slider('gview', { values: ['gantt', 'pert'], labels: ['Gantt', 'PERT'], value: G.view, ticks: 'labels', compact: true })}
+        ${pert ? info('', 'Diagramme PERT : chaque boîte est une tâche, les flèches sont les liens « finit avant de commencer ». En haut : début au plus tôt, durée, fin au plus tôt. En bas : début au plus tard, marge, fin au plus tard. En rouge : le chemin critique, les tâches sans aucune marge. Touchez une boîte pour ouvrir la tâche.') : ''}
+        ${!pert && mobile ? `<label class="switch sm"><input type="checkbox" data-full ${!compact ? 'checked' : ''}><span></span> Gantt complet</label>` : ''}
+        ${compact || pert ? '' : slider('zoom', { values: Object.keys(ZOOMS), labels: Object.values(ZOOMS).map((z) => z.label), value: G.zoom, ticks: 'labels', compact: true })}
         <label class="switch sm" title="Chemin critique"><input type="checkbox" data-g="critical" ${G.critical ? 'checked' : ''}><span></span> Critique</label>
         <label class="switch sm"><input type="checkbox" data-g="showDone" ${G.showDone ? 'checked' : ''}><span></span> Faites</label>
         <label class="switch sm"><input type="checkbox" data-g="subs" ${G.subs ? 'checked' : ''}><span></span> Sous-tâches</label>
@@ -289,12 +292,13 @@ export function renderGantt(el) {
       </div>
       ${empty ? `<div class="empty"><h3>Aucun projet planifié</h3>
         <button class="btn primary" data-newproj>${icon('plus', 16)} Créer un projet</button></div>`
+        : pert ? `<div class="pert-wrap">${pertHtml(gs)}</div>`
         : compact ? `<div class="cg-wrap">${compactHtml(gs, an)}</div>`
         : `<div class="gantt-scroll">${ganttHtml(rows, an, from, to, { dayW, nameW })}</div>`}
     </section>`;
 
   bind(el, { from, dayW, nameW });
-  if (!compact && !empty) {
+  if (!compact && !empty && !pert) {
     const sc = el.querySelector('.gantt-scroll');
     const saved = local.get('ganttScroll');
     sc.scrollLeft = saved && saved.zoom === G.zoom && saved.from === toDateStr(from) ? saved.x : Math.max(0, ((new Date() - from) / DAY) * dayW - 120);
@@ -305,7 +309,10 @@ export function renderGantt(el) {
 
 function bind(el, { from, dayW }) {
   const root = el.querySelector('.gantt-view');
-  bindSliders(root, (name, v) => { if (name === 'zoom' && v !== G.zoom) { G.zoom = v; persist(); renderGantt(el); } });
+  bindSliders(root, (name, v) => {
+    if (name === 'zoom' && v !== G.zoom) { G.zoom = v; persist(); renderGantt(el); }
+    if (name === 'gview' && v !== G.view) { G.view = v; persist(); renderGantt(el); }
+  });
   root.addEventListener('change', (e) => {
     if (e.target.matches('[data-full]')) { G.mobileMode = e.target.checked ? 'full' : 'compact'; persist(); renderGantt(el); return; }
     const k = e.target.dataset.g;

@@ -972,3 +972,62 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .cg-subs li.done span { text-decoration: line-through; }
 .cg-track.sm { height: 6px; margin: 0; }
 .cg-subs .cg-track { display: block; }
+
+/* =====================================================================
+   v2.3 : anneaux d'avancement, bandeau priorités, dépassement, PERT
+   ===================================================================== */
+.ring { position: relative; display: inline-grid; place-items: center; width: var(--rs); height: var(--rs); flex: none; color: var(--cc, var(--accent)); }
+.ring svg { position: absolute; inset: 0; }
+.ring-bg { fill: none; stroke: var(--surface-3); stroke-width: 4; }
+.ring-fg { fill: none; stroke: currentColor; stroke-width: 4; stroke-linecap: round; transition: stroke-dasharray .4s; }
+.ring b { position: relative; font-size: .7rem; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.ring b small { font-size: .55rem; font-weight: 700; color: var(--muted); }
+.ring.lg b { font-size: .9rem; }
+.c-cote .ring, .c-reste .ring { color: var(--muted); }
+.tr-side { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
+.tr-prio { font-size: .68rem; font-weight: 700; color: var(--muted); }
+.task-row[class*="c-"] .ring { color: var(--cc); }
+.prio-strip { margin-bottom: 14px; }
+.prio-strip header { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; }
+.prio-strip header b { display: flex; align-items: center; gap: 6px; color: var(--danger); }
+.prio-cards { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px; scroll-snap-type: x mandatory; }
+.prio-card {
+  flex: 0 0 auto; width: 230px; display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--radius);
+  border: 1px solid var(--line); border-top: 4px solid var(--cc); background: var(--surface); box-shadow: var(--shadow);
+  font: inherit; color: var(--text); text-align: left; cursor: pointer; scroll-snap-align: start;
+}
+.prio-card:hover { border-color: var(--cc); }
+.prio-txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.prio-txt b { font-size: .9rem; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.prio-txt small { font-size: .74rem; color: var(--muted); }
+.mx-dot { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 16%, var(--surface)) var(--pr, 0%), var(--surface) var(--pr, 0%)); }
+.g-pct { margin-left: 4px; font-weight: 700; color: var(--muted); }
+.over-choices { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+.over-choices .btn { flex: 1 1 140px; min-height: 48px; }
+/* PERT */
+.pert-wrap { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
+.pert-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .78rem; color: var(--muted); }
+.pert-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pert-net { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+.pert-net header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.pert-net header small { color: var(--muted); }
+.pert-scroll { overflow: auto; }
+.pert { display: block; }
+.pert .pe { fill: none; stroke: var(--muted); stroke-width: 1.6; }
+.pert .pe.crit { stroke: var(--danger); stroke-width: 2.4; }
+.pert marker path { fill: var(--muted); }
+.pert .pc circle { fill: var(--surface-2); stroke: var(--muted); stroke-width: 1.5; }
+.pert .pc text { font-size: 10px; font-weight: 700; fill: var(--muted); text-anchor: middle; }
+.pert .pn { cursor: pointer; }
+.pert .pn rect:first-of-type { fill: var(--surface); stroke: var(--pc); stroke-width: 1.6; }
+.pert .pn:hover rect:first-of-type { filter: drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
+.pert .pn.crit rect:first-of-type { stroke: var(--danger); stroke-width: 2.6; }
+.pert .pn.late rect:first-of-type { fill: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.pert .pn.done { opacity: .55; }
+.pert .pn line { stroke: var(--line); stroke-width: 1; }
+.pert .pn-prog { fill: var(--ok); }
+.pert .pv { font-size: 10.5px; fill: var(--muted); text-anchor: middle; font-variant-numeric: tabular-nums; }
+.pert .pv.b { font-weight: 700; fill: var(--text); }
+.pert .pv.z { fill: var(--danger); }
+.pert .pt { font-size: 12px; font-weight: 650; fill: var(--text); text-anchor: middle; }
+@media (max-width: 760px) { .prio-card { width: 200px; } }

@@ -230,3 +230,13 @@ export function bindSliders(root, onInput) {
 
 export const LV = { values: [1, 2, 3, 4, 5], labels: ['1 · Pas du tout', '2 · Peu', '3 · Moyen', '4 · Assez', '5 · Très'] };
 export const EN = { values: [1, 2, 3, 4], labels: ['1 · Plombant', '2 · Fatigant', '3 · Stimulant', '4 · Dynamisant'] };
+
+/** Anneau d'avancement (0..1) avec le pourcentage au centre. */
+export function ring(p, size = 36, cls = '') {
+  const r = (size - 5) / 2, c = 2 * Math.PI * r, pct = Math.round((p || 0) * 100);
+  return `<span class="ring ${cls}" style="--rs:${size}px" title="Avancement : ${pct} %" aria-label="Avancement ${pct} %">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+      <circle class="ring-bg" cx="${size / 2}" cy="${size / 2}" r="${r}"/>
+      <circle class="ring-fg" ${pct ? '' : 'stroke-opacity="0"'} cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-dasharray="${(c * (p || 0)).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>
+    </svg><b>${pct}<small>%</small></b></span>`;
+}

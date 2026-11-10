@@ -1,10 +1,10 @@
 // Écran principal : la liste des tâches, la saisie rapide et les propositions.
 
-import { db, tasks, projects, newTask, putTask, removeTask, save, local, score, category, CATEGORIES, catInfo, isLeader, ENERGY, people, spentOf } from './store.js';
+import { db, tasks, projects, newTask, putTask, removeTask, save, local, score, category, CATEGORIES, catInfo, isLeader, ENERGY, people, spentOf, progressOf } from './store.js';
 import { analyze, completeTask, propagate } from './sched.js';
 import { suggestions, dismiss } from './suggest.js';
 import { openTaskEditor } from './editor.js';
-import { slider, bindSliders, info, LV, EN, energyChip, levelChip, projectChip, whenLabel, dueLabel, toast } from './ui.js';
+import { slider, bindSliders, info, LV, EN, energyChip, levelChip, projectChip, whenLabel, dueLabel, toast, ring } from './ui.js';
 import { esc, icon, toDateStr, fmtDuration } from './util.js';
 import { isConnected as msConnected } from './outlook.js';
 import { ghConfigured } from './github.js';
@@ -68,8 +68,21 @@ function row(t, an) {
           ${flags.join('')}
         </div>
       </div>
-      <div class="tr-score" title="Score de priorité = importance × 2 + urgence">${score(t)}</div>
+      <div class="tr-side" data-open>${ring(progressOf(t), 40)}<small class="tr-prio" title="Score de priorité = importance × 2 + urgence">P${score(t)}</small></div>
     </li>`;
+}
+
+function prioritiesHtml(list) {
+  const top = list.filter((t) => t.status !== 'done' && ['priorite', 'deleguer'].includes(category(t))).sort((a, b) => score(b) - score(a)).slice(0, 8);
+  if (!top.length) return '';
+  return `<section class="prio-strip" aria-label="Priorités">
+    <header><b>${icon('alert', 16)} Urgent et important</b><span class="count">${top.length}</span></header>
+    <div class="prio-cards">${top.map((t) => `
+      <button class="prio-card c-${category(t)}" data-prio="${t.id}" title="${esc(t.title)}">
+        ${ring(progressOf(t), 52, 'lg')}
+        <span class="prio-txt"><b>${esc(t.title)}</b><small>${esc(catInfo(category(t)).label)}${t.due ? ' · ' + esc(dueLabel(t)) : t.start ? ' · ' + esc(whenLabel(t)) : ''}</small></span>
+      </button>`).join('')}</div>
+  </section>`;
 }
 
 function suggestionsHtml(an) {
@@ -151,6 +164,7 @@ export function renderList(el) {
     <section class="view list-view">
 
       ${!msConnected() && !ghConfigured() ? `<a class="card sync-banner" href="#reglages/sync">${icon('sync', 20)}<div><b>Cet appareil n’est pas synchronisé</b><span>Les tâches saisies sur l’application (ou un autre ordinateur) n’apparaissent pas ici. Connectez-le une fois.</span></div><span class="btn primary sm">Connecter</span></a>` : ''}
+      ${prioritiesHtml(tasks())}
       ${suggestionsHtml(an)}
 
       <div class="toolbar">
@@ -211,6 +225,8 @@ function bind(root, el) {
   root.addEventListener('click', (e) => {
     const m = e.target.closest('[data-mode]');
     if (m) { F.mode = m.dataset.mode; persist(); renderList(el); return; }
+    const pr = e.target.closest('[data-prio]');
+    if (pr) { openTaskEditor(pr.dataset.prio); return; }
     const cat = e.target.closest('[data-cat]');
     if (cat && !e.target.closest('.info')) { collapsedCats[cat.dataset.cat] = !collapsedCats[cat.dataset.cat]; local.set('collapsedCats', collapsedCats); renderList(el); return; }
     const mo = e.target.closest('[data-open-id]');
@@ -232,7 +248,7 @@ function bind(root, el) {
     const t = db.tasks[rowEl.dataset.id];
     if (!t) return;
     if (e.target.closest('[data-check]')) { toggleDone(t); return; }
-    if (e.target.closest('[data-open]') || e.target.closest('.tr-score')) openTaskEditor(t.id);
+    if (e.target.closest('[data-open]')) openTaskEditor(t.id);
   });
 }
 

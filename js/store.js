@@ -119,6 +119,14 @@ export function parseDuration(str) {
   if (/[.,]/.test(s)) return Math.round(parseFloat(s.replace(',', '.')) * 60) || 0;
   return Number(s) || 0;
 }
+/** Avancement 0..1 : faite = 100 % ; sinon temps passé / charge, ou part des sous-tâches faites. */
+export function progressOf(t) {
+  if (t.status === 'done') return 1;
+  const sp = spentOf(t);
+  if (sp && t.estimate) return Math.min(1, sp / t.estimate);
+  if (t.subtasks?.length) return t.subtasks.filter((x) => x.done).length / t.subtasks.length;
+  return 0;
+}
 export const score = (t) => t.importance * 2 + t.urgency; // de 3 à 15
 const CAT_COLLAB = {
   deleguer: { label: 'Au meilleur moment', hint: 'Urgentes et importantes mais plombantes : sur un créneau d’énergie haute (le matin), sans enchaîner deux tâches plombantes.', short: 'Meilleur moment' },

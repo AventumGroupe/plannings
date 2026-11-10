@@ -2,7 +2,7 @@
 // On glisse une tâche pour changer son urgence, son importance ou son énergie.
 // Chaque zone rappelle, dans une bulle, la décision à prendre selon le profil.
 
-import { db, tasks, projects, putTask, local, setSettings, category, catInfo, isLeader, ENERGY, score } from './store.js';
+import { db, tasks, projects, putTask, local, setSettings, category, catInfo, isLeader, ENERGY, score, progressOf } from './store.js';
 import { openTaskEditor } from './editor.js';
 import { enableDrag, makeGhost, dropTarget } from './drag.js';
 import { slider, bindSliders, info, toast } from './ui.js';
@@ -59,8 +59,8 @@ function panelHtml(kind, list) {
     for (let u = 1; u <= 5; u++) {
       const here = list.filter((t) => t.urgency === u && t.importance === i).sort((a, b) => score(b) - score(a));
       cells.push(`<div class="mx-cell" data-cell data-u="${u}" data-i="${i}" data-panel="${kind}" style="grid-column:${col(u)};grid-row:${row(i)}">
-        ${here.map((t) => { const dm = t.estimate || 60; const sz = dm <= 15 ? 's' : dm <= 60 ? 'm' : 'l'; return `<button data-drag-ok class="mx-dot sz-${sz} e${t.energy} ${t.status === 'done' ? 'done' : ''} ${t.delegate ? 'deleg' : ''} ${t.automate ? 'auto' : ''}" data-mx-task="${t.id}" title="${esc(t.title)} · U${t.urgency} I${t.importance} · ${ENERGY[t.energy].label} · ${fmtDuration(dm)}">
-          <i></i><span>${esc(t.title)}</span><em>${esc(fmtDuration(dm).replace(' min', '′'))}</em></button>`; }).join('')}
+        ${here.map((t) => { const dm = t.estimate || 60; const sz = dm <= 15 ? 's' : dm <= 60 ? 'm' : 'l'; return `<button data-drag-ok style="--pr:${Math.round(progressOf(t) * 100)}%" class="mx-dot sz-${sz} e${t.energy} ${t.status === 'done' ? 'done' : ''} ${t.delegate ? 'deleg' : ''} ${t.automate ? 'auto' : ''}" data-mx-task="${t.id}" title="${esc(t.title)} · U${t.urgency} I${t.importance} · ${ENERGY[t.energy].label} · ${fmtDuration(dm)}">
+          <i></i><span>${esc(t.title)}</span><em>${Math.round(progressOf(t) * 100) ? Math.round(progressOf(t) * 100) + ' %' : esc(fmtDuration(dm).replace(' min', '′'))}</em></button>`; }).join('')}
       </div>`);
     }
   }

@@ -7,7 +7,7 @@ import {
 import { tStart, tEnd, setSpan, shiftTo, requiredStart, propagate, succsOf, completeTask, proposeSlot, RECUR } from './sched.js';
 import { openDialog, confirmDialog, toast, slider, bindSliders, info, LV, EN } from './ui.js';
 import { adviceHtml, runAdvice } from './advice.js';
-import { esc, icon, uid, parse, toLocal, toDateStr, addMinutes, fmt, cap, fmtDuration, MIN } from './util.js';
+import { esc, icon, uid, parse, toLocal, toDateStr, addMinutes, addDays, fmt, cap, fmtDuration, MIN } from './util.js';
 
 const DURATIONS = [2, 5, 10, 15, 25, 30, 45, 50, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000, 3600, 4800, 6000, 7200, 9600, 12000];
 const REMINDERS = [[null, 'Aucun'], [0, 'À l’heure'], [5, '5 min avant'], [15, '15 min avant'], [30, '30 min avant'], [60, '1 h avant'], [120, '2 h avant'], [1440, 'La veille']];
@@ -370,6 +370,12 @@ export function openTaskEditor(idOrPreset = null) {
     const spent = parseDuration(body.querySelector('[data-newspent]').value);
     d.subtasks.push({ id: uid(), title: v, done: spent > 0, spent: spent || 0, doneAt: spent > 0 ? Date.now() : null });
     part('sub', subHtml());
+    if (d.status === 'todo') {
+      const inp = body.querySelector('[data-sld="status"] input');
+      if (inp) { inp.value = 1; inp.dispatchEvent(new Event('change', { bubbles: true })); }
+      d.status = 'doing';
+      toast('Statut passé à « En cours ».');
+    }
     body.querySelector('[data-newsub]').focus();
   };
   body.addEventListener('keydown', (e) => {
@@ -453,5 +459,63 @@ export function openTaskEditor(idOrPreset = null) {
     if (moved.size) msg += ` ${moved.size} successeur${moved.size > 1 ? 's' : ''} décalé${moved.size > 1 ? 's' : ''}.`;
     if (next) msg += ' Prochaine occurrence créée.';
     toast(msg);
+    if (d.status !== 'done' && d.estimate && spentOf(d) >= d.estimate) setTimeout(() => askOverrun(d.id), 250);
   }
+}
+
+/**
+ * Le temps passé atteint la charge prévue : la tâche est-elle faite ou en retard ?
+ * En retard : on ajoute du temps, la tâche est marquée en retard (rouge) et placée / prolongée dans le Gantt.
+ */
+export function askOverrun(id) {
+  const t = db.tasks[id];
+  if (!t) return;
+  const spent = spentOf(t);
+  const extras = [30, 60, 120, 180, 240, 360, 480, 960, 1440, 2400];
+  const guess = extras.find((m) => m >= Math.max(30, t.estimate * 0.25)) || 480;
+  let extra = guess;
+  const { el, close } = openDialog({
+    title: 'Le temps imparti est terminé',
+    body: `<p><b>${esc(t.title)}</b> : ${esc(fmtDuration(spent))} passées pour ${esc(fmtDuration(t.estimate))} prévues.</p>
+      <p>La tâche est-elle :</p>
+      <div class="over-choices">
+        <button type="button" class="btn primary" data-over="done">${icon('check', 16)} 1. Faite</button>
+        <button type="button" class="btn danger" data-over="late">${icon('alert', 16)} 2. En retard</button>
+      </div>
+      <div class="over-late" hidden>
+        ${slider('overExtra', { label: 'Temps supplémentaire estimé', values: extras, labels: extras.map(fmtDuration), value: guess, ticks: false })}
+        <p class="hint">La tâche passe en rouge et est placée (ou prolongée) dans le Gantt ; ses successeurs sont décalés.</p>
+        <button type="button" class="btn primary" data-over="apply">Intégrer dans le Gantt</button>
+      </div>`,
+  });
+  bindSliders(el, (name, v) => { if (name === 'overExtra') extra = Number(v); });
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-over]');
+    if (!b) return;
+    const k = b.dataset.over;
+    if (k === 'done') {
+      const next = completeTask(t); propagate([t.id]); save('task'); close();
+      toast(next ? 'Bravo ! Prochaine occurrence créée.' : 'Bravo, tâche terminée !');
+    } else if (k === 'late') {
+      el.querySelector('.over-late').hidden = false; el.querySelector('.over-choices').hidden = true;
+    } else if (k === 'apply') {
+      t.estimate = (t.estimate || 0) + extra;
+      t.overrun = true;
+      t.status = 'doing';
+      const days = Math.max(1, Math.ceil(extra / 240)); // ~4 h de travail concentré par jour
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const hadStart = !!t.start, wasAllDay = !!t.allDay;
+      const curStart = hadStart ? tStart(t) : null, curEnd = hadStart ? tEnd(t) : null;
+      // Point de départ : aujourd'hui, ou la date prévue si elle est encore à venir
+      const base = curStart && curStart > today ? new Date(curStart.getFullYear(), curStart.getMonth(), curStart.getDate()) : (wasAllDay && curStart ? new Date(curStart.getFullYear(), curStart.getMonth(), curStart.getDate()) : today);
+      let endEx = addDays(curStart && curStart > today ? base : today, days); // fin exclusive
+      if (wasAllDay && curEnd && curEnd > endEx) endEx = curEnd;
+      t.allDay = true;
+      setSpan(t, base, endEx);
+      putTask(t, { silent: true });
+      const moved = propagate([t.id]);
+      save('task'); close();
+      toast(`En retard : ${fmtDuration(extra)} ajoutées, visible en rouge dans le Gantt${moved.size ? ` ; ${moved.size} successeur(s) décalé(s)` : ''}.`);
+    }
+  });
 }

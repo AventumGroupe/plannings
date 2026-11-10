@@ -206,7 +206,7 @@ export function analyze() {
     const open = t.status !== 'done';
     const slack = a - end;
     res[t.id] = {
-      late: open && Number.isFinite(slack) && slack < -MIN,
+      late: open && ((Number.isFinite(slack) && slack < -MIN) || !!t.overrun),
       slackDays: Number.isFinite(slack) ? Math.floor(slack / DAY) : null,
       critical: open && (t.projectId || hasLinks.has(t.id)) && Math.abs(b - end) < MIN,
       overdue: open && end < now.getTime(),
