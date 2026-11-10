@@ -7,7 +7,8 @@
 // ce qui permet au téléphone et à l'ordinateur de partager exactement les mêmes données.
 // Les modifications faites directement dans Outlook ou To Do (titre, date, statut) sont reprises.
 
-import { db, tasks, newTask, putTask, save, local, mergeRemote, ENERGY } from './store.js';
+import { db, tasks, newTask, putTask, removeTask, save, local, mergeRemote, ENERGY } from './store.js';
+import { classifyMail, plainText } from './mailfilter.js';
 import { tEnd, propagate, completeTask } from './sched.js';
 import { toLocal, toDateStr, parse, addDays, startOfDay } from './util.js';
 
@@ -52,6 +53,17 @@ export const useTodo = () => local.get('msTodo', true);
 export const useAgenda = () => local.get('msAgenda', true);
 export const setUse = (k, v) => local.set({ todo: 'msTodo', agenda: 'msAgenda', flags: 'msFlags' }[k] || 'msAgenda', !!v);
 export const useFlags = () => local.get('msFlags', true);
+export const useMailFilter = () => local.get('msMailFilter', true);
+export const mailIgnored = () => local.get('mailIgnored', []);
+/** Mail ignoré par le tri, finalement à traiter : en faire une tâche (elle ne sera plus filtrée). */
+export function keepIgnoredMail(todoId) {
+  const m = mailIgnored().find((x) => x.todoId === todoId);
+  if (!m) return null;
+  const t = newTask({ title: m.title, urgency: 3, importance: 3, energy: 3, estimate: 15, notes: m.webUrl ? `Mail : ${m.webUrl}` : '', mail: { todoId: m.todoId, listId: m.listId, webUrl: m.webUrl, keep: true } });
+  putTask(t);
+  local.set('mailIgnored', mailIgnored().filter((x) => x.todoId !== todoId));
+  return t;
+}
 export const accountLabel = () => account ? (account.name ? `${account.name} (${account.username})` : account.username) : '';
 
 class GraphError extends Error {
@@ -295,11 +307,20 @@ async function syncFlagged() {
   try { items = await pages(`${base}?$expand=linkedResources`); } catch (e) { if (e.status === 404) { local.set('flagListId', ''); return 0; } items = await pages(base); }
   let n = 0;
   const byTodo = new Map(tasks().filter((t) => t.mail?.todoId).map((t) => [t.mail.todoId, t]));
+  const ignored = new Map(mailIgnored().map((m) => [m.todoId, m]));
+  const filter = useMailFilter();
   for (const it of items) {
     const id = mailTaskId(it.id);
     const t = byTodo.get(it.id) || db.tasks[id];
     const done = it.status === 'completed';
     const link = (it.linkedResources || []).find((r) => r.webUrl)?.webUrl || '';
+    // Tri : promotionnels et messages automatiques ignorés (y compris les tâches déjà créées, non commencées)
+    const verdict = filter && !t?.mail?.keep ? classifyMail(it.title, plainText(it.body)) : { kind: 'reponse' };
+    if (verdict.kind !== 'reponse' && !done) {
+      if (!ignored.has(it.id)) ignored.set(it.id, { todoId: it.id, listId, webUrl: link, title: it.title || 'Mail', reason: verdict.reason, at: Date.now() });
+      if (t && t.status === 'todo' && !(t.subtasks || []).length) { removeTask(t.id); n++; }
+      continue;
+    }
     if (!t) {
       if (done || db.deleted[id]) continue;
       const high = it.importance === 'high';
@@ -319,6 +340,9 @@ async function syncFlagged() {
       t.mail = { ...t.mail, closed: true }; putTask(t, { silent: true, touch: false });
     }
   }
+  // Liste des ignorés : seulement ceux encore marqués dans Outlook (100 au plus)
+  const live = new Set(items.filter((x) => x.status !== 'completed').map((x) => x.id));
+  local.set('mailIgnored', [...ignored.values()].filter((m) => live.has(m.todoId)).slice(-100));
   return n;
 }
 

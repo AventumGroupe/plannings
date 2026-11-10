@@ -108,3 +108,20 @@ test('dépendances : un retard décale les successeurs', async ({ page }) => {
   expect(r.a).toBe('2026-11-19');
   expect(r.b >= '2026-11-21').toBe(true);
 });
+
+test('tri des mails marqués : seuls ceux qui appellent une réponse', async ({ page }) => {
+  const r = await page.evaluate(async () => {
+    const { classifyMail } = await import('./js/mailfilter.js');
+    return [
+      ["Keynote Live - Création d'un écosystème business", 'Inscrivez-vous gratuitement. Se désinscrire'],
+      ['RE: Devis formation management', 'Pouvez-vous me confirmer les dates ?'],
+      ['Votre commande n°12345 a été expédiée', 'Suivi de colis'],
+      ['Facture disponible - Octobre', 'Ne pas répondre à ce message'],
+      ['-30% sur toutes nos formations', 'Offre limitée'],
+      ['Demande de devis formation Excel', 'Nous souhaiterions un devis.'],
+      ['Votre code de vérification', 'Votre code est 123456'],
+      ['Relance facture impayée F2026-102', 'Merci de procéder au règlement.'],
+    ].map(([s, p]) => classifyMail(s, p).kind);
+  });
+  expect(r).toEqual(['promo', 'reponse', 'auto', 'auto', 'promo', 'reponse', 'auto', 'reponse']);
+});

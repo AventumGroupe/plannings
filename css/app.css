@@ -1208,3 +1208,11 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .tl-span small { color: var(--muted); margin-left: 6px; }
 .tl-span.e1 { border-left-color: var(--e1); } .tl-span.e2 { border-left-color: var(--e2); } .tl-span.e3 { border-left-color: var(--e3); } .tl-span.e4 { border-left-color: var(--e4); }
 .tl-span.done { opacity: .55; }
+.mail-filter { margin-top: 4px; }
+.mail-ignored { margin: 6px 0; }
+.mail-ignored summary { cursor: pointer; color: var(--muted); font-size: .88rem; }
+.mail-ignored ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
+.mail-ignored li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); }
+.mail-ignored li span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mail-ignored li b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mail-ignored li small { color: var(--muted); }

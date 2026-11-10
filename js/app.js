@@ -20,7 +20,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.8.1';
+const VERSION = '2.8.2';
 const TABS = [
   { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
   { id: 'journee', label: 'Journée', icon: 'today', render: renderToday },
@@ -215,6 +215,12 @@ function renderSettings(el) {
             <label class="switch"><input type="checkbox" data-msflags ${ms.useFlags() ? 'checked' : ''}><span></span> Mails marqués ${icon('alert', 14)}</label>
             ${info('', 'Microsoft To Do : les tâches sans heure précise vont dans la liste « Plannings » (titre, échéance, statut, importance, rappel) et leurs sous-tâches deviennent des « étapes » To Do, dans les deux sens. Agenda Outlook : les tâches avec une heure précise deviennent des rendez-vous. Si l’agenda est désactivé, toutes les tâches vont dans To Do. Mails marqués : chaque mail marqué d’un drapeau dans Outlook devient une tâche (15 min, à trier) ; la cocher dans l’application retire le drapeau.')}
           </div>
+          ${ms.useFlags() ? `<div class="row wrap gap mail-filter">
+            <label class="switch"><input type="checkbox" data-msfilter ${ms.useMailFilter() ? 'checked' : ''}><span></span> Seulement les mails qui appellent une réponse</label>
+            ${info('', 'Les mails promotionnels (lettres d’information, offres, webinaires…) et automatiques (commandes, factures, codes, notifications…) ne deviennent pas des tâches. Ils restent marqués dans Outlook. Si le tri se trompe, ouvrez la liste ci-dessous et faites-en une tâche.')}
+          </div>
+          ${ms.useMailFilter() && ms.mailIgnored().length ? `<details class="mail-ignored"><summary>${ms.mailIgnored().length} mail(s) écarté(s) par le tri</summary>
+            <ul>${ms.mailIgnored().slice().reverse().map((m) => `<li><span><b>${esc(m.title)}</b><small>${esc(m.reason)}</small></span><button class="btn sm ghost" data-keepmail="${esc(m.todoId)}">En faire une tâche</button></li>`).join('')}</ul></details>` : ''}` : ''}
           <label class="field" ${ms.useAgenda() ? '' : 'hidden'}><span>Calendrier</span><select data-cal><option value="">Calendrier principal</option></select></label>
           <div class="row wrap gap">
             <button class="btn primary" data-act="sync">${icon('sync', 16)} Synchroniser</button>
@@ -309,6 +315,7 @@ function renderSettings(el) {
       ms.setUse(e.target.matches('[data-mstodo]') ? 'todo' : e.target.matches('[data-msflags]') ? 'flags' : 'agenda', e.target.checked);
       render(); manualSync(); return;
     }
+    if (e.target.matches('[data-msfilter]')) { local.set('msMailFilter', e.target.checked); render(); manualSync(); return; }
     if (e.target.matches('[data-rhlink]')) {
       const v = e.target.value.trim();
       if (v && !parseLink(v)) { toast('Lien attendu : https://…/agenda/<code>.ics (Plateforme RH › Mon agenda).'); return; }
@@ -341,6 +348,8 @@ function renderSettings(el) {
     }
     const cp = e.target.closest('[data-copy]');
     if (cp) { navigator.clipboard?.writeText(cp.dataset.copy); toast('Adresse copiée.'); return; }
+    const km = e.target.closest('[data-keepmail]');
+    if (km) { const t = ms.keepIgnoredMail(km.dataset.keepmail); if (t) toast(`Tâche « ${t.title} » créée.`); render(); return; }
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
     if (act === 'login') {
