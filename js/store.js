@@ -7,11 +7,19 @@ const KEY = 'gp:data:v1';
 const LOCAL_KEY = 'gp:local:v1';
 
 export const LEVELS = { 1: 'Pas du tout', 2: 'Peu', 3: 'Moyen', 4: 'Assez', 5: 'Très' };
+/** Niveau d'énergie lié à la tâche : 1 faible … 4 haute (dans le flow). */
 export const ENERGY = {
-  1: { label: 'Plombant', hint: 'Vide l’énergie : plutôt le matin, ou à déléguer' },
-  2: { label: 'Fatigant', hint: 'Demande un effort' },
-  3: { label: 'Stimulant', hint: 'Plutôt agréable' },
-  4: { label: 'Dynamisant', hint: 'Recharge les batteries' },
+  1: { label: 'Énergie faible', short: 'Faible', hint: 'La tâche vide l’énergie' },
+  2: { label: 'Énergie modérée', short: 'Modérée', hint: 'Demande un effort' },
+  3: { label: 'Bonne énergie', short: 'Bonne', hint: 'Plutôt porteuse' },
+  4: { label: 'Énergie haute', short: 'Flow', hint: 'On est dans le flow' },
+};
+/** Motivation pour la tâche (fixe, privée : jamais partagée). */
+export const MOTIVATION = {
+  1: { label: 'Peu motivé', short: 'Peu' },
+  2: { label: 'Plutôt peu motivé', short: 'Plutôt peu' },
+  3: { label: 'Motivé', short: 'Motivé' },
+  4: { label: 'Très motivé', short: 'Très' },
 };
 export const STATUS = { todo: 'À faire', doing: 'En cours', done: 'Fait' };
 export const RES_TYPES = {
@@ -21,14 +29,19 @@ export const RES_TYPES = {
   budget: { label: 'Budget', plural: 'Budgets', unit: '€' },
   materiel: { label: 'Matériel', plural: 'Matériel', unit: 'u.' },
 };
-/** Cartographie : urgence × importance × énergie (ordre d'affichage). */
+/**
+ * Les 8 situations : (urgent ? important ?) × (énergie × motivation haute ?).
+ * Libellés et recommandations selon le profil (voir SITUATION_TEXT / decisionsFor).
+ */
 export const CATEGORIES = {
-  priorite: { label: 'Priorités', hint: 'Urgentes, importantes et dynamisantes : à faire en premier.', short: 'Priorité' },
-  deleguer: { label: 'Déléguer ou automatiser', hint: 'Urgentes et importantes, mais plombantes : à confier ou à automatiser.', short: 'À déléguer' },
-  cote: { label: 'Laisser de côté', hint: 'Urgentes mais peu importantes, qu’elles dynamisent ou plombent.', short: 'De côté' },
-  planifier: { label: 'À planifier', hint: 'Importantes, pas urgentes, dynamisantes : à placer dans l’agenda.', short: 'À planifier' },
-  collaborer: { label: 'Planifier avec un collaborateur', hint: 'Importantes, pas urgentes, plombantes : à planifier dans le temps et à confier.', short: 'Avec un collaborateur' },
-  reste: { label: 'Le reste', hint: 'Ni urgentes ni importantes.', short: 'Le reste' },
+  prioriser: { label: 'Prioriser', hint: 'Urgente, importante, et vous avez l’énergie et l’envie : à faire maintenant.', short: 'Prioriser' },
+  urg_lourd: { label: 'Déléguer', hint: 'Urgente et importante, mais énergie ou motivation basse : à confier ou à automatiser.', short: 'Déléguer' },
+  planifier: { label: 'Planifier', hint: 'Importante, pas urgente, avec énergie et envie : bloquer un créneau.', short: 'Planifier' },
+  imp_lourd: { label: 'Déléguer', hint: 'Importante, pas urgente, mais énergie ou motivation basse : à confier, automatiser ou découper.', short: 'Déléguer' },
+  expedier: { label: 'Expédier ou planifier', hint: 'Urgente mais peu importante, et facile pour vous : en temps limité.', short: 'Expédier' },
+  urg_second: { label: 'Refuser ou renvoyer', hint: 'Urgente mais peu importante, énergie ou motivation basse : refuser, renvoyer à celui qui la demande ou abandonner.', short: 'Refuser' },
+  plustard: { label: 'Plus tard', hint: 'Ni urgente ni importante, mais agréable : pour les moments creux.', short: 'Plus tard' },
+  abandon: { label: 'Proposer l’abandon', hint: 'Ni urgente ni importante, et peu d’envie : à abandonner.', short: 'Abandonner' },
 };
 export const PROJECT_COLORS = ['#3b6fe0', '#2fa37a', '#d9792b', '#b5489a', '#7a5fd1', '#c8a52a', '#2a9bb5', '#d14b4b'];
 
@@ -44,14 +57,18 @@ export const DEFAULT_SETTINGS = {
 };
 
 function blank() {
-  return { schema: 1, tasks: {}, projects: {}, resources: {}, templates: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS } };
+  return { schema: 1, tasks: {}, projects: {}, resources: {}, templates: {}, abandons: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS } };
 }
 
 function normalizeTask(t) {
+  // Tâches d'avant la v3 : motivation par défaut 2/4, décision déduite de leur état (sinon : à trancher).
+  if (t && !('motivation' in t)) {
+    t = { ...t, motivation: 2, decision: t.decision || (t.delegate ? { key: 'deleguer', at: Date.now() } : t.start ? { key: 'planifier', at: Date.now() } : t.status === 'doing' ? { key: 'prioriser', at: Date.now() } : null) };
+  }
   return {
     title: '', notes: '', urgency: 3, importance: 3, energy: 3, status: 'todo',
     projectId: null, start: null, end: null, allDay: false, estimate: 60, due: null,
-    subtasks: [], preds: [], assign: [], delegate: null, delegatedAt: null, followUp: null, nudges: [], recur: null, reminder: null,
+    subtasks: [], preds: [], assign: [], motivation: null, decision: null, delegate: null, delegatedAt: null, followUp: null, nudges: [], recur: null, reminder: null,
     outlook: null, todo: null, createdAt: Date.now(), updatedAt: Date.now(), doneAt: null, slips: 0, automate: false,
     ...t,
   };
@@ -60,7 +77,7 @@ function normalizeTask(t) {
 function normalize(d) {
   const b = blank();
   const out = { ...b, ...d, settings: { ...DEFAULT_SETTINGS, ...(d.settings || {}) } };
-  for (const k of ['tasks', 'projects', 'resources', 'templates', 'deleted']) out[k] = { ...(d[k] || {}) };
+  for (const k of ['tasks', 'projects', 'resources', 'templates', 'abandons', 'deleted']) out[k] = { ...(d[k] || {}) };
   for (const id in out.tasks) out.tasks[id] = normalizeTask(out.tasks[id]);
   return out;
 }
@@ -137,23 +154,102 @@ export function progressOf(t) {
   if (t.subtasks?.length) return t.subtasks.filter((x) => x.done).length / t.subtasks.length;
   return 0;
 }
-export const score = (t) => t.importance * 2 + t.urgency; // de 3 à 15
 const CAT_COLLAB = {
-  deleguer: { label: 'Au meilleur moment', hint: 'Urgentes et importantes mais plombantes : sur un créneau d’énergie haute (le matin), sans enchaîner deux tâches plombantes.', short: 'Meilleur moment' },
-  collaborer: { label: 'À planifier au calme', hint: 'Importantes, pas urgentes, plombantes : à étaler dans le temps, en séances courtes, sur des créneaux propices.', short: 'Au calme' },
+  urg_lourd: { label: 'En parler à son manager', hint: 'Urgente et importante, mais énergie ou motivation basse : en parler à son manager ou à son dirigeant, ou automatiser.', short: 'Manager' },
+  imp_lourd: { label: 'Découper ou demander de l’aide', hint: 'Importante, pas urgente, mais énergie ou motivation basse : découper en petites étapes ou demander de l’aide.', short: 'Découper' },
+  urg_second: { label: 'Valider la nécessité', hint: 'Urgente mais peu importante, énergie ou motivation basse : valider la nécessité avec son manager ou son dirigeant.', short: 'Valider' },
 };
 export const isLeader = () => db.settings.role !== 'collaborateur';
-/** Libellé d'une catégorie selon le profil (dirigeant : déléguer ; collaborateur : moment propice). */
-export const catInfo = (k) => (!isLeader() && CAT_COLLAB[k]) || CATEGORIES[k];
-export const isUrgent = (t) => t.urgency >= 4;
+/** Libellé d'une situation selon le profil. */
+export const catInfo = (k) => (!isLeader() && CAT_COLLAB[k]) || CATEGORIES[k] || CATEGORIES.abandon;
+
+const DAYMS = 864e5;
+/** Urgence effective : monte toute seule à l'approche de l'échéance (jamais ne baisse). */
+export function effUrgency(t) {
+  let u = t.urgency || 1;
+  if (t.due && t.status !== 'done') {
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    const days = Math.round((new Date(t.due + 'T00:00') - d0) / DAYMS);
+    if (days <= 1) u = 5; else if (days <= 3) u = Math.max(u, 4); else if (days <= 7) u = Math.max(u, 3);
+  }
+  return u;
+}
+export const motivationOf = (t) => t.motivation || 2;
+/** Score Eisenhower : urgence × importance (1 à 25). */
+export const uiScore = (t) => effUrgency(t) * (t.importance || 1);
+/** Score énergie : énergie × motivation (1 à 16). */
+export const emScore = (t) => (t.energy || 1) * motivationOf(t);
+export const isUrgent = (t) => effUrgency(t) >= 4;
 export const isImportant = (t) => t.importance >= 4;
-export const isEnergizing = (t) => t.energy >= 3;
+export const isEnergizing = (t) => emScore(t) >= 9;
+/** Tri : Eisenhower d'abord, énergie ensuite (de 1 à 25,16). */
+export const score = (t) => uiScore(t) + emScore(t) / 100;
+/** Tâche urgente de moins de 15 minutes : à faire tout de suite, quels que soient les scores. */
+export const quickWin = (t) => isUrgent(t) && (t.estimate || 60) <= 15 && t.status !== 'done';
+
+/** Décisions possibles (choisies par l'utilisateur). */
+export const DECISIONS = {
+  prioriser: { label: 'Prioriser', icon: 'flame' },
+  planifier: { label: 'Planifier', icon: 'calendar' },
+  expedier: { label: 'Expédier (15 min)', icon: 'play' },
+  deleguer: { label: 'Déléguer', icon: 'people', leader: true },
+  manager: { label: 'En parler à son manager', icon: 'people', collab: true },
+  aide: { label: 'Demander de l’aide', icon: 'people' },
+  automatiser: { label: 'Automatiser', icon: 'sync' },
+  decouper: { label: 'Découper', icon: 'grid' },
+  regrouper: { label: 'Regrouper', icon: 'list' },
+  reporter: { label: 'Reporter (date de revue)', icon: 'repeat' },
+  negocier: { label: 'Négocier l’échéance', icon: 'link' },
+  refuser: { label: 'Refuser ou renvoyer', icon: 'close', leader: true },
+  valider: { label: 'Valider la nécessité', icon: 'people', collab: true },
+  plustard: { label: 'Plus tard', icon: 'sun' },
+  abandon: { label: 'Abandonner', icon: 'trash' },
+};
+/** Recommandation principale puis alternatives, par situation et selon le profil. */
+export function decisionsFor(t) {
+  const leader = isLeader();
+  const c = category(t);
+  const aide = leader ? 'aide' : 'aide';
+  const map = leader ? {
+    prioriser: ['prioriser', 'planifier', 'decouper'],
+    urg_lourd: ['deleguer', 'automatiser', 'aide', 'negocier', 'prioriser'],
+    planifier: ['planifier', 'decouper', 'prioriser'],
+    imp_lourd: ['deleguer', 'automatiser', 'decouper', 'aide', 'planifier'],
+    expedier: ['expedier', 'planifier', 'regrouper', 'deleguer'],
+    urg_second: ['refuser', 'abandon', 'automatiser', 'deleguer', 'negocier'],
+    plustard: ['plustard', 'regrouper', 'automatiser', 'reporter', 'abandon'],
+    abandon: ['abandon', 'automatiser', 'reporter', 'plustard'],
+  } : {
+    prioriser: ['prioriser', 'planifier', 'decouper'],
+    urg_lourd: ['manager', 'automatiser', aide, 'negocier', 'prioriser'],
+    planifier: ['planifier', 'decouper', 'prioriser'],
+    imp_lourd: ['decouper', aide, 'automatiser', 'planifier', 'manager'],
+    expedier: ['expedier', 'planifier', 'regrouper'],
+    urg_second: ['valider', 'negocier', 'automatiser', 'abandon'],
+    plustard: ['plustard', 'regrouper', 'automatiser', 'reporter', 'abandon'],
+    abandon: ['abandon', 'automatiser', 'reporter', 'plustard'],
+  };
+  const list = map[c] || map.abandon;
+  return quickWin(t) ? ['expedier', ...list.filter((x) => x !== 'expedier')] : list;
+}
+/** La tâche doit-elle être tranchée (onglet Décision) ? */
+export function needsDecision(t) {
+  if (t.status === 'done') return false;
+  if (!t.motivation) return true;
+  const dec = t.decision;
+  if (!dec?.key) return true;
+  if (dec.key === 'reporter' && dec.reviewAt && dec.reviewAt <= new Date().toISOString().slice(0, 10)) return true;
+  return false;
+}
+/** Tâche masquée jusqu'à sa date de revue. */
+export const isDeferred = (t) => t.decision?.key === 'reporter' && t.decision.reviewAt && t.decision.reviewAt > new Date().toISOString().slice(0, 10);
+
 export function category(t) {
   const u = isUrgent(t), i = isImportant(t), e = isEnergizing(t);
-  if (u && i) return e ? 'priorite' : 'deleguer';
-  if (u) return 'cote';
-  if (i) return e ? 'planifier' : 'collaborer';
-  return 'reste';
+  if (u && i) return e ? 'prioriser' : 'urg_lourd';
+  if (i) return e ? 'planifier' : 'imp_lourd';
+  if (u) return e ? 'expedier' : 'urg_second';
+  return e ? 'plustard' : 'abandon';
 }
 
 /** Date de dernière modification, y compris les métadonnées Outlook (pour la fusion). */
@@ -161,7 +257,7 @@ export const modAt = (x) => Math.max(x.updatedAt || 0, x.outlook?.syncedAt || 0,
 
 // ---------- Écriture ----------
 export function newTask(p = {}) {
-  return normalizeTask({ id: uid(), reminder: db.settings.reminder, createdAt: Date.now(), updatedAt: Date.now(), ...p });
+  return normalizeTask({ id: uid(), reminder: db.settings.reminder, createdAt: Date.now(), updatedAt: Date.now(), motivation: null, decision: null, ...p });
 }
 
 export function putTask(t, { silent = false, touch = true } = {}) {
@@ -248,7 +344,7 @@ export function mergeRemote(remote) {
   for (const [id, del] of Object.entries(r.deleted)) {
     if (!db.deleted[id] || db.deleted[id].at < del.at) { db.deleted[id] = del; changed = true; }
   }
-  for (const k of ['tasks', 'projects', 'resources', 'templates']) {
+  for (const k of ['tasks', 'projects', 'resources', 'templates', 'abandons']) {
     for (const [id, item] of Object.entries(r[k])) {
       const mine = db[k][id];
       if (!mine || modAt(item) > modAt(mine)) { db[k][id] = item; changed = true; }
@@ -264,4 +360,19 @@ export function mergeRemote(remote) {
   for (const [id, del] of Object.entries(db.deleted)) if (del.at < limit) delete db.deleted[id];
   if (changed) save('merge');
   return changed;
+}
+
+/** Journal des renoncements (pour le bilan) : la tâche est supprimée, sa trace gardée. */
+export const abandons = () => Object.values(db.abandons || {}).sort((a, b) => b.at - a.at);
+export function abandonTask(t, reason = '') {
+  db.abandons = db.abandons || {};
+  db.abandons['ab-' + t.id] = { id: 'ab-' + t.id, title: t.title, reason: String(reason || '').slice(0, 300), at: Date.now(), updatedAt: Date.now(),
+    ui: uiScore(t), em: emScore(t), project: t.projectId ? db.projects[t.projectId]?.name || '' : '', situation: category(t) };
+  removeTask(t.id);
+}
+/** Enregistre une décision (et ses effets simples). */
+export function decide(t, key, extra = {}) {
+  t.decision = { key, at: Date.now(), ...extra };
+  if (key === 'automatiser') t.automate = true;
+  putTask(t);
 }

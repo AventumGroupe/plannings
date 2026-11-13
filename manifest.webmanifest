@@ -3,7 +3,7 @@
   "short_name": "Plannings",
   "description": "Tâches par urgence, importance et énergie ; calendrier Outlook ; Gantt.",
   "lang": "fr",
-  "start_url": "./#taches",
+  "start_url": "./#journee",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",

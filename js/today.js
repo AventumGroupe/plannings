@@ -1,7 +1,13 @@
 // Onglet « Ma journée » : énergie du moment, la tâche à faire maintenant,
 // le déroulé de la journée (rendez-vous Outlook + tâches) et une proposition de journée en un clic.
 
-import { db, tasks, putTask, save, local, outlookEvents, ownAbsentOn, rhEvents, score, category, catInfo, ENERGY, remainingOf, progressOf } from './store.js';
+import { db, tasks, putTask, save, local, outlookEvents, ownAbsentOn, rhEvents, score, category, catInfo, ENERGY, remainingOf, progressOf, needsDecision, isDeferred, effUrgency, quickWin, uiScore, emScore, DECISIONS } from './store.js';
+import { proposeSlot } from './sched.js';
+import { toDecideCount } from './decision.js';
+import { waitingHtml, recordNudge } from './delegation.js';
+import { scoreBadges } from './ui.js';
+import { isConnected as msConnected } from './outlook.js';
+import { ghConfigured } from './github.js';
 import { tStart, tEnd, setSpan, busyOn, propagate, analyze } from './sched.js';
 import { sessionOf } from './advice.js';
 import { reviewDue } from './review.js';
@@ -27,7 +33,7 @@ const isLaterSession = (t) => /\(séance (?:[2-9]|\d{2,})\/\d+\)$/.test(t.title)
 export function nowCandidates(e = energyNow()) {
   const now = new Date(), end = addDays(startOfDay(now), 1);
   const an = analyze();
-  return tasks().filter((t) => t.status !== 'done' && !t.delegate && !isLaterSession(t)
+  return tasks().filter((t) => t.status !== 'done' && !t.delegate && !isLaterSession(t) && !needsDecision(t) && !isDeferred(t) && !['plustard', 'reporter'].includes(t.decision?.key)
     && (!t.start || (tStart(t) < end && (!t.allDay || tStart(t) <= now))))
     .map((t) => {
       let s = score(t) * 2;
@@ -91,7 +97,7 @@ function freeGaps(day = new Date()) {
 /** Proposition de journée : remplit les créneaux libres, plombantes le matin, dynamisantes ensuite. */
 export function proposeDay() {
   const S = db.settings, brk = S.breakMin ?? 5;
-  const pool = tasks().filter((t) => t.status !== 'done' && !t.start && !t.delegate && !t.automate && !isLaterSession(t))
+  const pool = tasks().filter((t) => t.status !== 'done' && !t.start && !t.delegate && !t.automate && !isLaterSession(t) && !needsDecision(t) && !isDeferred(t) && ['prioriser', 'planifier', 'expedier', 'decouper', 'regrouper'].includes(t.decision?.key))
     .sort((a, b) => score(b) - score(a));
   const used = new Set(), out = [];
   let plombMin = 0, lastPlomb = false;
@@ -177,6 +183,29 @@ function timelineHtml() {
   return spanHtml + (html || tail ? `<ol class="timeline">${html}${tail}</ol>` : `<p class="muted">Rien d’autre de prévu aujourd’hui.</p>`);
 }
 
+const sc = { uiScore, emScore, effUrgency };
+function jrow(t, { place = false } = {}) {
+  return `<li class="jr-row e${t.energy}">
+    <button class="chk" data-jdone="${t.id}" aria-label="Terminer"></button>
+    <button class="jr-t" data-open-id="${t.id}"><b>${esc(t.title)}</b><small>${t.due ? `échéance ${fmt.dateShort.format(new Date(t.due + 'T00:00'))} · ` : ''}${fmtDuration(remainingOf(t) || t.estimate || 60)}${t.decision?.key ? ' · ' + esc(DECISIONS[t.decision.key]?.label || '') : ''}</small></button>
+    <span class="jr-sc">${scoreBadges(t, sc)}</span>
+    ${place ? `<button class="btn sm" data-place="${t.id}">${icon('calendar', 14)} Placer</button>` : ''}
+    <button class="icon-btn xs" data-focus="${t.id}" title="Lancer le minuteur" aria-label="Lancer le minuteur">${icon('play', 16)}</button>
+  </li>`;
+}
+/** Urgentes aujourd'hui, et tâches décidées mais pas encore planifiées. */
+function blocksHtml() {
+  const today = todayStr();
+  const open = tasks().filter((t) => t.status !== 'done' && !t.delegate && !isDeferred(t));
+  const urgent = open.filter((t) => effUrgency(t) >= 5 || (t.due && t.due <= today) || quickWin(t) || (t.start && t.start.slice(0, 10) < today && !t.allDay))
+    .sort((a, b) => score(b) - score(a)).slice(0, 8);
+  const ids = new Set(urgent.map((t) => t.id));
+  const unplanned = open.filter((t) => !t.start && !ids.has(t.id) && !needsDecision(t) && ['prioriser', 'planifier', 'expedier', 'decouper', 'regrouper'].includes(t.decision?.key))
+    .sort((a, b) => score(b) - score(a)).slice(0, 10);
+  return `${urgent.length ? `<section class="card jr-block urgent"><header><h3>${icon('alert', 18)} Urgent aujourd’hui</h3><span class="count">${urgent.length}</span>${info('', 'Échéance aujourd’hui ou dépassée, urgence maximale (y compris relevée par l’échéance), ou tâche urgente de moins de 15 minutes.')}</header><ul>${urgent.map((t) => jrow(t, { place: !t.start })).join('')}</ul></section>` : ''}
+    ${unplanned.length ? `<section class="card jr-block"><header><h3>${icon('calendar', 18)} Décidées, pas encore planifiées</h3><span class="count">${unplanned.length}</span><span class="spacer"></span><button class="btn sm" data-propose>${icon('bulb', 14)} Proposer ma journée</button></header><ul>${unplanned.map((t) => jrow(t, { place: true })).join('')}</ul></section>` : ''}`;
+}
+
 export function renderToday(el) {
   const e = energyNow();
   const cands = nowCandidates(e);
@@ -192,13 +221,15 @@ export function renderToday(el) {
         ${ring(st.pct, 56, 'lg')}
       </header>
       ${ownAbsentOn(todayStr()) ? `<div class="card review-banner">${icon('sun', 20)}<div><b>${esc(rhEvents().find((x) => x.own && x.debut <= todayStr() && x.fin >= todayStr())?.titre || 'Absence')} aujourd’hui</b><span>Rien n’est proposé pour cette journée. Profitez-en !</span></div></div>` : ''}
-      ${reviewDue() ? `<a class="card review-banner" href="#journee/revue">${icon('check', 20)}<div><b>C’est l’heure de la revue de la semaine</b><span>15 minutes pour boucler la semaine et préparer la suivante.</span></div><span class="btn primary sm">Commencer</span></a>` : ''}
+      ${reviewDue() ? `<a class="card review-banner" href="#journee/revue">${icon('check', 20)}<div><b>C’est l’heure de la revue de la semaine</b><span>15 minutes pour faire le bilan et préparer la semaine.</span></div><span class="btn primary sm">Commencer</span></a>` : ''}
 
       <div class="card energy-now">
         ${slider('enow', { label: 'Mon énergie maintenant', values: [1, 2, 3, 4], labels: ['Épuisé', 'Fatigué', 'En forme', 'Au top'], value: e, kind: 'energy', ticks: 'labels' })}
         ${info('', 'Indiquez comment vous vous sentez : la tâche proposée s’adapte. En forme, on attaque le plus difficile ; fatigué, on choisit du dynamisant ou du rapide.')}
       </div>
 
+      ${toDecideCount() ? `<a class="card review-banner decide-banner" href="#decision">${icon('bulb', 20)}<div><b>${toDecideCount()} tâche${toDecideCount() > 1 ? 's' : ''} à trancher</b><span>Tant qu’elles ne sont pas décidées, elles ne sont ni planifiées ni proposées.</span></div><span class="btn primary sm">Trancher</span></a>` : ''}
+      ${!msConnected() && !ghConfigured() ? `<a class="card sync-banner" href="#reglages/sync">${icon('sync', 20)}<div><b>Cet appareil n’est pas synchronisé</b><span>Connectez-le une fois pour retrouver les mêmes tâches partout.</span></div><span class="btn primary sm">Connecter</span></a>` : ''}
       ${t ? `<section class="card now-card e${t.energy}">
         <header><span class="now-tag">${icon('flame', 16)} Maintenant</span><small>${esc(whyNow(t, e))}</small></header>
         <div class="now-main">
@@ -210,10 +241,11 @@ export function renderToday(el) {
           <button class="btn primary" data-focus="${t.id}">${icon('play', 18)} C’est parti</button>
           ${cands.length > 1 ? `<button class="btn ghost" data-skip>Autre idée</button>` : ''}
         </div>
-      </section>` : `<div class="card empty"><p>Rien à faire pour l’instant. Profitez-en !</p></div>`}
+      </section>` : `<div class="card now-card now-empty"><p>${toDecideCount() ? 'Tranchez vos tâches : la tâche à faire maintenant sera proposée ici.' : 'Rien à faire pour l’instant. Profitez-en !'}</p></div>`}
 
+      ${blocksHtml()}
       <section class="card day-card">
-        <header class="row"><h3>Ma journée</h3><span class="spacer"></span>
+        <header class="row"><h3>Mon agenda du jour</h3><span class="spacer"></span>
           <button class="btn sm" data-propose>${icon('bulb', 16)} Proposer ma journée</button>
           <a class="btn sm ghost" href="#journee/revue" title="Revue de la semaine">${icon('check', 16)}<span class="hide-sm">Revue</span></a>
           ${info('', 'Remplit les créneaux libres restants avec vos tâches non planifiées : plombantes le matin (jamais deux d’affilée, 2 h 30 au plus), dynamisantes ensuite, en séances avec une pause. Vous validez avant.')}
@@ -221,6 +253,7 @@ export function renderToday(el) {
         ${st.dueToday.length ? `<div class="due-today"><small>À rendre ou en cours aujourd’hui :</small>${st.dueToday.map((x) => `<button class="chip" data-open-id="${x.id}">${esc(x.title)}</button>`).join('')}</div>` : ''}
         ${timelineHtml()}
       </section>
+      ${waitingHtml(local.get('journeeWait', true))}
     </section>`;
   bind(el);
 }
@@ -234,7 +267,22 @@ function bind(el) {
     if (ev.target.closest('[data-skip]')) { skip++; renderToday(el); return; }
     const f = ev.target.closest('[data-focus]');
     if (f) { const m = await import('./focus.js'); m.startFocus(db.tasks[f.dataset.focus]); return; }
-    if (ev.target.closest('[data-propose]')) openProposal(el);
+    if (ev.target.closest('[data-propose]')) { openProposal(el); return; }
+    const dn = ev.target.closest('[data-jdone]');
+    if (dn) { const m = await import('./list.js'); m.toggleDone(db.tasks[dn.dataset.jdone]); return; }
+    const pl = ev.target.closest('[data-place]');
+    if (pl) {
+      const t = db.tasks[pl.dataset.place];
+      const slot = t && proposeSlot(t, { morning: t.energy <= 2, days: 10 });
+      if (!slot) { toast('Aucun créneau libre trouvé dans les 10 prochains jours.'); return; }
+      t.allDay = false; setSpan(t, slot, new Date(slot.getTime() + Math.min(t.estimate || 60, 240) * MIN)); putTask(t, { silent: true }); propagate([t.id]); save('today');
+      toast(`Placée ${cap(fmt.dayShort.format(slot))} à ${fmt.time.format(slot)}.`); return;
+    }
+    if (ev.target.closest('[data-toggle-wait]')) { local.set('journeeWait', !local.get('journeeWait', true)); renderToday(el); return; }
+    const nu = ev.target.closest('[data-nudge]');
+    if (nu) { const t = db.tasks[nu.dataset.nudge]; if (t) { recordNudge(t); toast('Relance notée. Prochain point dans 2 jours ouvrés.'); } return; }
+    const rc = ev.target.closest('[data-received]');
+    if (rc) { const m = await import('./list.js'); m.toggleDone(db.tasks[rc.dataset.received]); }
   });
 }
 

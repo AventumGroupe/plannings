@@ -48,6 +48,8 @@ export function rhythmOf(t) {
 export function adviceFor(t) {
   const d = t.estimate || 60, plomb = t.energy <= 2, leader = isLeader();
   const cat = category(t), r = rhythmOf(t), long = r.kind === 'split';
+  // Branches de conseils (v3 : 8 situations ramenées aux 5 familles de conseils)
+  const b = { prioriser: 'priorite', urg_lourd: 'deleguer', imp_lourd: 'collaborer', expedier: 'cote', urg_second: 'cote' }[cat] || cat;
   const team = people();
   const opts = [];
   const sessionsAct = { label: long ? `Planifier les ${r.n} séances` : 'Planifier', act: 'sessions' };
@@ -65,24 +67,24 @@ export function adviceFor(t) {
     return { r, cat, opts: [{ key: 'now', title: 'Le faire maintenant', text: 'Moins de 2 minutes : plus rapide que de la noter ou de la planifier.', src: 'Allen', actions: [{ label: 'C’est fait', act: 'done' }] }] };
   }
 
-  if (cat === 'priorite') {
+  if (b === 'priorite') {
     opts.push({ key: 'do', title: 'Le faire en premier', text: `Bloquez le créneau aujourd’hui ou demain et protégez-le des interruptions.`, src: `Covey, ${r.src}, Leroy`, actions: [sessionsAct] });
     if (long) opts.push({ key: 'deep', title: 'Bloc de travail profond', text: 'Notifications coupées, une seule tâche, pause réelle entre les séances.', src: 'Newport', actions: [] });
-  } else if (cat === 'deleguer') {
+  } else if (b === 'deleguer') {
     opts.push({ key: 'force', title: 'Le faire quand même (pas le choix)', text: `Le matin, quand l’énergie est haute, puis enchaîner avec une tâche dynamisante. Engagement : ${intent}`, src: `Tracy, ${r.src}, Gollwitzer, Loehr & Schwartz`, actions: [sessionsAct] });
     opts.push(leader
       ? { key: 'deleg', title: 'Déléguer', text: 'Confier avec un objectif clair, une date de retour et un point d’étape. Vous gardez le contrôle du résultat.', src: 'Covey', actions: delegateActs.length ? delegateActs : [{ label: 'Ajouter une personne', act: 'people' }] }
       : { key: 'help', title: 'Demander un appui', text: 'Répartir avec un collègue ou signaler la charge à votre responsable pour arbitrer.', src: 'Covey', actions: [] });
     opts.push({ key: 'alt', title: 'Trouver une alternative', text: 'Négocier le délai, réduire le périmètre (80 % du résultat pour 20 % de l’effort), repartir d’un modèle existant.', src: 'Covey', actions: [] });
     opts.push(automate);
-  } else if (cat === 'planifier') {
+  } else if (b === 'planifier') {
     opts.push({ key: 'plan', title: 'Planifier un bloc cette semaine', text: `C’est ici que se prépare l’avenir : réservez le créneau avant qu’il ne soit pris.`, src: `Covey, Newport, ${r.src}`, actions: [sessionsAct] });
-  } else if (cat === 'collaborer') {
+  } else if (b === 'collaborer') {
     opts.push({ key: 'calm', title: leader ? 'Planifier dans le temps' : 'Planifier au calme', text: `Étalez sur plusieurs matinées, jamais deux tâches plombantes d’affilée.`, src: `Cirillo, Albulescu, Pink`, actions: [{ ...sessionsAct, act: 'sessions-spread' }] });
     if (leader) opts.push({ key: 'deleg', title: 'Confier à un collaborateur', text: 'Avec une échéance et un point d’étape.', src: 'Covey', actions: delegateActs.length ? delegateActs : [{ label: 'Ajouter une personne', act: 'people' }] });
     opts.push({ key: 'alt', title: 'Trouver une alternative', text: 'Réduire le périmètre ou repartir d’un modèle.', src: 'Covey', actions: [] });
     if (t.recur || d >= 60) opts.push(automate);
-  } else if (cat === 'cote') {
+  } else if (b === 'cote') {
     opts.push(d <= 15
       ? { key: 'quick', title: 'Expédier ou refuser', text: 'Courte : traitez-la dans le créneau « petites tâches », ou refusez-la. Ne la laissez pas interrompre une séance.', src: 'Allen, Leroy', actions: [] }
       : { key: 'no', title: 'Refuser, reporter ou réduire', text: 'Urgente pour quelqu’un d’autre, peu importante pour vous : ne pas laisser l’urgence décider.', src: 'Covey', actions: [] });

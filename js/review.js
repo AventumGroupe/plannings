@@ -1,6 +1,7 @@
-// Revue de la semaine (le vendredi) : bilan, ce qui a glissé, délégations en attente, semaine prochaine.
+// Revue de la semaine (le lundi) : bilan de la semaine passée, ce qui a glissé, tâches à re-trancher,
+// délégations en attente, priorités de la semaine qui commence.
 
-import { db, tasks, putTask, removeTask, save, local, score, category, catInfo, people, spentOf, ENERGY, isLeader } from './store.js';
+import { db, tasks, putTask, removeTask, abandonTask, save, local, score, category, catInfo, people, spentOf, ENERGY, isLeader, needsDecision, isDeferred } from './store.js';
 import { analyze, setSpan, propagate, proposeSlot } from './sched.js';
 import { delegateTo, waiting, nudgeHref, recordNudge } from './delegation.js';
 import { focusStats } from './focus.js';
@@ -8,19 +9,20 @@ import { openDialog, toast, ring } from './ui.js';
 import { esc, icon, fmt, cap, startOfDay, addDays, addMinutes, toDateStr, fmtDuration, MIN } from './util.js';
 
 const weekStart = (d = new Date()) => { const x = startOfDay(d); const k = (x.getDay() + 6) % 7; return addDays(x, -k); };
-const weekKey = () => toDateStr(weekStart());
+const weekKey = (d = new Date()) => toDateStr(weekStart(d));
 
-/** La revue est-elle à faire ? (dernier jour travaillé de la semaine, à partir de 14 h, pas encore faite) */
+/** La revue est-elle à faire ? (dès le premier jour travaillé de la semaine, une fois par semaine) */
 export function reviewDue(now = new Date()) {
   const wd = db.settings.workDays;
-  const last = Math.max(...wd.map((d) => (d + 6) % 7)); // lundi = 0
+  const first = Math.min(...wd.map((d) => (d + 6) % 7)); // lundi = 0
   const today = (now.getDay() + 6) % 7;
-  if (local.get('lastReview', '') === weekKey()) return false;
-  return today > last || (today === last && now.getHours() >= 14);
+  if (local.get('lastReview', '') === weekKey(now)) return false;
+  return today >= first;
 }
 
 function data() {
-  const ws = weekStart().getTime(), we = addDays(weekStart(), 7).getTime();
+  // Bilan : la semaine passée ; plan : la semaine qui commence (à partir d'aujourd'hui).
+  const ws = addDays(weekStart(), -7).getTime(), we = weekStart().getTime();
   const an = analyze();
   const all = tasks();
   const done = all.filter((t) => t.status === 'done' && t.doneAt >= ws && t.doneAt < we);
@@ -28,22 +30,23 @@ function data() {
   const today = toDateStr(new Date());
   const slipped = open.filter((t) => !t.delegate && (t.slips > 0 || t.overrun || an[t.id]?.late || (t.due && t.due < today)))
     .sort((a, b) => score(b) - score(a));
-  const nextMon = addDays(weekStart(), 7);
-  const nextEnd = addDays(nextMon, 7);
+  const nextMon = startOfDay(new Date());
+  const nextEnd = addDays(weekStart(), 7);
   const plannedNext = open.filter((t) => t.start && new Date(t.start) >= nextMon && new Date(t.start) < nextEnd);
-  const candidates = open.filter((t) => !t.start && !t.delegate && !slipped.includes(t) && ['priorite', 'planifier', 'deleguer', 'collaborer'].includes(category(t)))
+  const candidates = open.filter((t) => !t.start && !t.delegate && !slipped.includes(t) && !needsDecision(t) && !isDeferred(t) && ['prioriser', 'planifier', 'expedier'].includes(t.decision?.key))
     .sort((a, b) => score(b) - score(a)).slice(0, 8);
-  const stale = open.filter((t) => category(t) === 'reste' && !t.start && Date.now() - (t.createdAt || Date.now()) > 30 * 864e5).slice(0, 6);
+  // Tranchées il y a plus de 15 jours et toujours pas faites : les scores ont pu changer
+  const stale = open.filter((t) => t.decision?.at && !isDeferred(t) && Date.now() - t.decision.at > 15 * 864e5 && !t.start).slice(0, 8);
   // estimé / réel sur les tâches finies avec du temps saisi
   const measured = done.filter((t) => t.estimate && spentOf(t) > 0);
   const est = measured.reduce((m, t) => m + t.estimate, 0), real = measured.reduce((m, t) => m + spentOf(t), 0);
   const fs = focusStats();
   let sessions = 0;
-  for (let d = weekStart(); d < addDays(weekStart(), 7); d = addDays(d, 1)) sessions += fs.days[toDateStr(d)] || 0;
+  for (let d = addDays(weekStart(), -7); d < weekStart(); d = addDays(d, 1)) sessions += fs.days[toDateStr(d)] || 0;
   return { done, slipped, plannedNext, candidates, stale, est, real, measured, sessions, streak: fs.streak, nextMon };
 }
 
-const STEPS = ['Bilan', 'Ce qui a glissé', 'En attente', 'Semaine prochaine', 'C’est fini'];
+const STEPS = ['Bilan', 'Ce qui a glissé', 'En attente', 'Cette semaine', 'C’est fini'];
 
 export function openReview() {
   let step = 0;
@@ -60,14 +63,14 @@ export function openReview() {
       ${ratio ? `<p class="rv-ratio ${ratio > 1.25 ? 'warn' : ''}">Temps réel / temps estimé : <b>${Math.round(ratio * 100)} %</b> sur ${D.measured.length} tâche(s).
         ${ratio > 1.25 ? 'Vos estimations sont optimistes : ajoutez une marge d’environ ' + Math.round((ratio - 1) * 100) + ' %.' : ratio < 0.8 ? 'Vous estimez large : vous pouvez prévoir plus serré.' : 'Vos estimations sont justes, bravo.'}</p>` : ''}
       ${D.done.length ? `<ul class="rv-list done">${D.done.slice(0, 12).map((t) => `<li>✓ ${esc(t.title)}</li>`).join('')}${D.done.length > 12 ? `<li class="muted">+ ${D.done.length - 12} autre(s)</li>` : ''}</ul>`
-        : '<p class="muted">Aucune tâche terminée cette semaine. On repart du bon pied la semaine prochaine.</p>'}`;
+        : '<p class="muted">Aucune tâche terminée la semaine dernière. On repart du bon pied cette semaine.</p>'}`;
   };
 
   const slippedHtml = () => D.slipped.length ? `<p class="hint">Pour chacune : on replanifie, on confie, ou on abandonne.</p>
     <ul class="rv-rows">${D.slipped.map((t) => `<li data-rv="${t.id}" class="${t._rv ? 'handled' : ''}">
       <div><b>${esc(t.title)}</b><small>${[t.slips ? `reportée ×${t.slips}` : '', t.overrun ? 'temps dépassé' : '', t.due ? `échéance ${fmt.dateShort.format(new Date(t.due + 'T00:00'))}` : ''].filter(Boolean).join(' · ')}</small></div>
       ${t._rv ? `<span class="badge accent">${esc(t._rv)}</span>` : `<span class="rv-acts">
-        <button class="btn sm primary" data-rva="plan">Semaine prochaine</button>
+        <button class="btn sm primary" data-rva="plan">Cette semaine</button>
         ${isLeader() && people().length ? `<select class="sm" data-rvdel><option value="">Confier…</option>${people().map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>` : ''}
         <button class="btn sm ghost danger-text" data-rva="drop">Abandonner</button></span>`}
     </li>`).join('')}</ul>` : '<p class="ok-msg">Rien n’a glissé cette semaine. Excellent !</p>';
@@ -81,15 +84,15 @@ export function openReview() {
   };
 
   const nextHtml = () => `
-    <p class="hint">Cochez les 3 à 5 tâches qui comptent vraiment la semaine prochaine : elles seront placées sur des créneaux libres (plombantes le matin).</p>
-    ${D.plannedNext.length ? `<p class="muted sm">${D.plannedNext.length} tâche(s) déjà prévue(s) la semaine prochaine.</p>` : ''}
+    <p class="hint">Cochez les 3 à 5 tâches qui comptent vraiment cette semaine : elles seront placées sur des créneaux libres (énergie faible le matin).</p>
+    ${D.plannedNext.length ? `<p class="muted sm">${D.plannedNext.length} tâche(s) déjà prévue(s) cette semaine.</p>` : ''}
     ${D.candidates.length ? `<ul class="rv-rows pick">${D.candidates.map((t) => `<li><label><input type="checkbox" data-pick="${t.id}" ${pick.has(t.id) ? 'checked' : ''}>
       <span><b>${esc(t.title)}</b><small>${esc(catInfo(category(t)).label)} · ${esc(ENERGY[t.energy].label)} · ${fmtDuration(t.estimate || 60)}</small></span></label></li>`).join('')}</ul>` : '<p class="muted">Pas de tâche importante en attente de planification.</p>'}
-    ${D.stale.length ? `<details class="rv-stale"><summary>${D.stale.length} tâche(s) du « reste » qui traînent depuis plus d’un mois</summary>
-      <ul class="rv-rows">${D.stale.map((t) => `<li data-rv="${t.id}" class="${t._rv ? 'handled' : ''}"><div><b>${esc(t.title)}</b></div>${t._rv ? `<span class="badge accent">${esc(t._rv)}</span>` : `<button class="btn sm ghost danger-text" data-rva="drop">Supprimer</button>`}</li>`).join('')}</ul></details>` : ''}`;
+    ${D.stale.length ? `<details class="rv-stale" open><summary>${D.stale.length} tâche(s) tranchée(s) il y a plus de 15 jours : à re-noter ?</summary>
+      <ul class="rv-rows">${D.stale.map((t) => `<li data-rv="${t.id}" class="${t._rv ? 'handled' : ''}"><div><b>${esc(t.title)}</b><small>${esc(catInfo(category(t)).label)}</small></div>${t._rv ? `<span class="badge accent">${esc(t._rv)}</span>` : `<span class="rv-acts"><button class="btn sm" data-rva="retrancher">Re-trancher</button><button class="btn sm ghost danger-text" data-rva="drop">Abandonner</button></span>`}</li>`).join('')}</ul></details>` : ''}`;
 
   const endHtml = () => `<div class="rv-end"><div class="big-tom"><span>🎉</span></div><h3>Semaine bouclée !</h3>
-    <p>Votre semaine prochaine est prête. Bon week-end, déconnectez vraiment : c’est aussi ça, la performance.</p></div>`;
+    <p>Votre semaine est prête. Bonne semaine !</p></div>`;
 
   const body = () => `<div class="rv-steps">${STEPS.map((s, i) => `<span class="${i === step ? 'on' : i < step ? 'ok' : ''}">${i < step ? '✓' : i + 1}<small>${s}</small></span>`).join('')}</div>
     <div class="rv-body">${[bilan, slippedHtml, waitHtml, nextHtml, endHtml][step]()}</div>`;
@@ -117,7 +120,8 @@ export function openReview() {
     const a = q('[data-rva]');
     if (a) {
       const t = db.tasks[a.closest('[data-rv]').dataset.rv];
-      if (a.dataset.rva === 'drop') { removeTask(t.id); t._rv = 'Abandonnée'; }
+      if (a.dataset.rva === 'drop') { abandonTask(t, 'Revue de la semaine'); t._rv = 'Abandonnée'; }
+      if (a.dataset.rva === 'retrancher') { t.decision = null; putTask(t); t._rv = 'Renvoyée dans Décision'; }
       if (a.dataset.rva === 'plan') { const s = placeNextWeek(t); t._rv = s ? cap(fmt.dayShort.format(s)) + ' ' + fmt.time.format(s) : 'Pas de créneau libre'; save('review'); }
       refresh(); return;
     }
@@ -130,7 +134,7 @@ export function openReview() {
         for (const id of pick) if (db.tasks[id] && placeNextWeek(db.tasks[id])) ok++;
         save('review');
         local.set('lastReview', weekKey());
-        if (ok) toast(`${ok} tâche(s) placée(s) la semaine prochaine.`);
+        if (ok) toast(`${ok} tâche(s) placée(s) cette semaine.`);
       }
       if (step === 4) { close(); return; }
       step++; refresh();

@@ -82,7 +82,7 @@ export const energyOptions = (short = false) =>
 
 // ---------- Pastilles ----------
 export const energyChip = (e, withLabel = true) =>
-  `<span class="chip energy e${e}" title="Énergie : ${ENERGY[e].label}">${icon('sun', 13)}${withLabel ? ENERGY[e].label : e}</span>`;
+  `<span class="chip energy e${e}" title="${ENERGY[e].label}">${icon('sun', 13)}${withLabel ? ENERGY[e].short : e}</span>`;
 
 export const levelChip = (kind, n) =>
   `<span class="lvl lvl${n}" title="${kind === 'U' ? 'Urgence' : 'Importance'} : ${n}/5 (${LEVELS[n]})"><i>${kind}</i>${n}</span>`;
@@ -124,8 +124,9 @@ export const resName = (id) => db.resources[id]?.name || '';
 
 // ---------- Bulles d'information (bouton « i ») ----------
 export const INFO = {
-  criteres: `<b>Urgence</b> 1→5 · <b>Importance</b> 1→5 · <b>Énergie</b> 1 plombant → 4 dynamisant.<br><br>Urgent et important + dynamisant : <b>priorité</b> ; + plombant : <b>déléguer ou automatiser</b>.<br>Urgent seulement : <b>laisser de côté</b>.<br>Important seulement + dynamisant : <b>à planifier</b> ; + plombant : <b>planifier avec un collaborateur</b>.<br><br>« Urgent » ou « important » = 4 ou 5.`,
-  energie: `<b>1 Plombant</b> : vide l’énergie, à faire le matin ou à déléguer.<br><b>2 Fatigant</b> : demande un effort.<br><b>3 Stimulant</b> : plutôt agréable.<br><b>4 Dynamisant</b> : recharge les batteries.`,
+  criteres: `<b>Score Eisenhower</b> = urgence × importance (sur 25). « Urgent » ou « important » = 4 ou 5 ; l’urgence monte seule à l’approche de l’échéance.<br><b>Score énergie</b> = énergie de la tâche × votre motivation (sur 16) ; « haut » à partir de 9.<br><br>Les deux scores donnent la décision : prioriser, planifier, déléguer, expédier, refuser, plus tard ou abandonner. La motivation reste privée.`,
+  energie: `Énergie liée à la tâche : <b>1 faible</b> (elle vide l’énergie), <b>2 modérée</b>, <b>3 bonne</b>, <b>4 haute</b> (dans le flow).`,
+  motivation: `Votre envie de faire cette tâche, de 1 (peu motivé) à 4 (très motivé). Elle est fixe et <b>privée</b> : jamais partagée, même pour une tâche confiée.`,
   propositions: `L’application ne planifie jamais seule : elle propose. Les tâches plombantes vont plutôt le matin ou sont à déléguer. « ✕ » masque une proposition pendant 7 jours.`,
   matrice: `Urgent et important : <b>faire</b>. Important : <b>planifier</b>. Urgent : <b>déléguer</b>. Ni l’un ni l’autre : <b>plus tard</b>.`,
   dependances: `Lien <b>fin → début</b> : un successeur commence après la fin de ses prédécesseurs (+ délai en jours). Si une tâche prend du retard, ses successeurs sont décalés automatiquement.`,
@@ -136,7 +137,7 @@ export const INFO = {
   gantt: `<b>Rouge</b> : finira après son échéance.<br><b>Contour orange</b> : chemin critique, aucune marge.<br><b>Trait rouge</b> : échéance du projet.<br><br>Glissez une barre pour la déplacer, son bord droit pour la durée, le rond pour créer un lien. Les successeurs suivent en cascade.`,
   retards: `Une tâche non terminée dont la fin est passée est reportée au prochain créneau ; ses successeurs suivent. Celles qui dépassent leur échéance passent en rouge.`,
   github: `Solution provisoire en attendant Microsoft 365 : vos données sont copiées dans un <b>dépôt GitHub privé</b>. L’application Android et la version web le lisent et l’écrivent : mêmes tâches partout. Synchronisation automatique à l’ouverture, après chaque modification et toutes les 2 minutes.`,
-  outlook: `Tout passe par votre compte Microsoft 365 (Exchange) :<br>• tâches <b>avec une heure précise</b> → rendez-vous dans l’<b>agenda Outlook</b> (avec rappel) ;<br>• <b>autres tâches</b> → liste « Plannings » de <b>Microsoft To Do</b> / Tâches Outlook ;<br>• le téléphone et l’ordinateur partagent ainsi les mêmes données.<br>Ce que vous modifiez dans Outlook ou To Do (titre, date, statut) revient dans l’application.`,
+  outlook: `Tout passe par votre compte Microsoft 365 (Exchange) :<br>• vos tâches → liste « Plannings » de <b>Microsoft To Do</b> (avec échéance et rappel) ;<br>• vos <b>rendez-vous Outlook</b> sont lus (calendrier 360, créneaux libres), jamais modifiés ;<br>• le téléphone et l’ordinateur partagent ainsi les mêmes données.<br>Ce que vous modifiez dans To Do (titre, date, statut) revient dans l’application.`,
   rappels: `Application ouverte : rappels et résumé du matin. Application fermée : les rappels des rendez-vous Outlook synchronisés prennent le relais.`,
   sauvegarde: `L’import fusionne le fichier avec vos données (la version la plus récente de chaque élément gagne).`,
   installer: `Android (Chrome) : menu ⋮ → « Installer l’application ». Ordinateur (Chrome / Edge) : icône d’installation dans la barre d’adresse. Fonctionne ensuite hors connexion.`,
@@ -229,7 +230,14 @@ export function bindSliders(root, onInput) {
 }
 
 export const LV = { values: [1, 2, 3, 4, 5], labels: ['1 · Pas du tout', '2 · Peu', '3 · Moyen', '4 · Assez', '5 · Très'] };
-export const EN = { values: [1, 2, 3, 4], labels: ['1 · Plombant', '2 · Fatigant', '3 · Stimulant', '4 · Dynamisant'] };
+export const EN = { values: [1, 2, 3, 4], labels: ['1 · Faible', '2 · Modérée', '3 · Bonne', '4 · Haute (flow)'] };
+export const MO = { values: [1, 2, 3, 4], labels: ['1 · Peu motivé', '2 · Plutôt peu', '3 · Motivé', '4 · Très motivé'] };
+
+/** Pastilles des deux scores : Eisenhower (U×I /25) et énergie (É×M /16). */
+export function scoreBadges(t, { uiScore, emScore, effUrgency }) {
+  const ui = uiScore(t), em = emScore(t), up = effUrgency(t) > t.urgency;
+  return `<span class="sc sc-ui ${ui >= 12 ? 'hi' : ''}" title="Eisenhower : urgence ${effUrgency(t)}${up ? ' (relevée par l’échéance)' : ''} × importance ${t.importance} = ${ui} / 25">${up ? '↑' : ''}${ui}<small>/25</small></span><span class="sc sc-em ${em >= 9 ? 'hi' : ''}" title="Énergie ${t.energy} × motivation ${t.motivation || '?'} = ${em} / 16">${t.motivation ? em : '?'}<small>/16</small></span>`;
+}
 
 /** Anneau d'avancement (0..1) avec le pourcentage au centre. */
 export function ring(p, size = 36, cls = '') {

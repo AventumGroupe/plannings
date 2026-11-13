@@ -3,9 +3,10 @@
 import {
   db, tasks, projects, resources, people, newTask, putTask, removeTask, save, newProject, putProject,
   newResource, putResource, STATUS, ENERGY, RES_TYPES, category, CATEGORIES, catInfo, isLeader, spentOf, parseDuration,
+  uiScore, emScore, effUrgency, DECISIONS, decisionsFor,
 } from './store.js';
 import { tStart, tEnd, setSpan, shiftTo, requiredStart, propagate, succsOf, completeTask, proposeSlot, RECUR } from './sched.js';
-import { openDialog, confirmDialog, toast, slider, bindSliders, info, LV, EN } from './ui.js';
+import { openDialog, confirmDialog, toast, slider, bindSliders, info, LV, EN, MO, scoreBadges } from './ui.js';
 import { adviceHtml, runAdvice } from './advice.js';
 import { delegateTo, nudgeHref } from './delegation.js';
 import { delegateAbsence, absenceLabel } from './rh.js';
@@ -90,6 +91,17 @@ export function openTaskEditor(idOrPreset = null) {
       <a class="btn sm ghost" href="${nudgeHref(d)}">${icon('bell', 14)} Relancer</a>
       ${d.delegatedAt ? `<small class="muted">Confiée le ${fmt.dateShort.format(new Date(d.delegatedAt))}${n ? ` · ${n} relance${n > 1 ? 's' : ''}` : ''}</small>` : ''}
     </div>`;
+  }
+
+  function catLiveHtml() {
+    const c = category(d), ci = catInfo(c), dec = d.decision?.key;
+    const reco = decisionsFor(d)[0];
+    return `<div class="cat-live c-${c}"><i class="grp-dot"></i><div class="cl-txt"><b>${esc(ci.label)}</b><span>${esc(ci.hint)}</span></div>
+      <span class="cl-sc">${scoreBadges(d, { uiScore, emScore, effUrgency })}</span></div>
+      <label class="field dec-field"><span>Décision</span><select data-f="decision">
+        <option value="" ${!dec ? 'selected' : ''}>À trancher (onglet Décision)</option>
+        ${Object.keys(DECISIONS).filter((k) => !['abandon', 'refuser'].includes(k) && (!DECISIONS[k].leader || isLeader()) && (!DECISIONS[k].collab || !isLeader())).map((k) => `<option value="${k}" ${dec === k ? 'selected' : ''}>${esc(DECISIONS[k].label)}${k === reco ? ' (recommandé)' : ''}</option>`).join('')}
+      </select></label>`;
   }
 
   function planningHtml() {
@@ -207,14 +219,16 @@ export function openTaskEditor(idOrPreset = null) {
       <div class="crit">
         ${slider('urgency', { label: 'Urgence', ...LV, value: d.urgency, kind: 'heat' })}
         ${slider('importance', { label: 'Importance', ...LV, value: d.importance, kind: 'heat' })}
-        ${slider('energy', { label: 'Énergie', ...EN, value: d.energy, kind: 'energy', infoKey: 'energie' })}
+        ${slider('energy', { label: 'Énergie de la tâche', ...EN, value: d.energy, kind: 'energy', infoKey: 'energie' })}
+        ${slider('motivation', { label: 'Ma motivation (privée)', ...MO, value: d.motivation || 2, kind: 'energy', infoKey: 'motivation' })}
         ${slider('status', { label: 'Statut', values: st, labels: st.map((k) => STATUS[k]), value: d.status, ticks: 'labels', kind: 'status' })}
       </div>
-      <div class="cat-live c-${category(d)}" data-cat-live><i class="grp-dot"></i><b>${catInfo(category(d)).label}</b><span>${catInfo(category(d)).hint}</span></div>
+      <div data-cat-live>${catLiveHtml()}</div>
       <div class="grid2">
-        <label class="field"><span>Projet</span>
-          <select data-f="projectId"><option value="">Sans projet</option>${projects().map((p) => `<option value="${p.id}" ${d.projectId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
-          <option value="__new">＋ Nouveau projet…</option></select></label>
+        <label class="field"><span>Projet ${info('', 'Tapez le nom d’un projet existant, ou un nouveau nom : le projet sera créé à l’enregistrement.')}</span>
+          <input type="text" list="dl-projects" data-f="projectName" value="${esc(d.projectId && db.projects[d.projectId] ? db.projects[d.projectId].name : '')}" placeholder="Aucun — tapez un nom" autocomplete="off">
+          <datalist id="dl-projects">${projects().map((p) => `<option value="${esc(p.name)}"></option>`).join('')}</datalist>
+          <small class="proj-hint" data-proj-hint></small></label>
         <label class="field"><span>Échéance</span><input type="date" data-f="due" value="${esc(d.due || '')}"></label>
       </div>
       <details class="block adv-block" open>
@@ -271,11 +285,9 @@ export function openTaskEditor(idOrPreset = null) {
   }
 
   bindSliders(body, (name, v, final) => {
-    if (name === 'urgency' || name === 'importance' || name === 'energy') {
+    if (name === 'urgency' || name === 'importance' || name === 'energy' || name === 'motivation') {
       d[name] = Number(v);
-      const c = category(d), box = body.querySelector('[data-cat-live]');
-      box.className = `cat-live c-${c}`;
-      box.innerHTML = `<i class="grp-dot"></i><b>${catInfo(c).label}</b><span>${catInfo(c).hint}</span>`;
+      body.querySelector('[data-cat-live]').innerHTML = catLiveHtml();
     }
     else if (name === 'status') d.status = v;
     else if (name === 'reminder') d.reminder = v;
@@ -292,7 +304,7 @@ export function openTaskEditor(idOrPreset = null) {
       d.recur = v ? { ...(d.recur || {}), freq: v, interval: d.recur?.interval || 1, days: d.recur?.days || [] } : null;
       if (final || !v || !body.querySelector('[data-sld="recurInterval"]')) part('recur', recurHtml());
     } else if (name === 'recurInterval' && d.recur) d.recur.interval = Number(v);
-    if (final && ['urgency', 'importance', 'energy', 'estimate'].includes(name)) part('advice', adviceHtml(d));
+    if (final && ['urgency', 'importance', 'energy', 'motivation', 'estimate'].includes(name)) part('advice', adviceHtml(d));
   });
 
   body.addEventListener('input', (e) => {
@@ -335,6 +347,12 @@ export function openTaskEditor(idOrPreset = null) {
       if (!d.allDay && d.start && d.end.slice(0, 10) === d.start.slice(0, 10) && parse(d.end) - parse(d.start) <= 12 * 60 * MIN) d.estimate = Math.max(15, Math.round((parse(d.end) - parse(d.start)) / MIN));
       part('planning', planningHtml());
     } else if (f === 'due') d.due = t.value || null;
+    else if (f === 'decision') { d.decision = t.value ? { key: t.value, at: Date.now() } : null; if (t.value === 'automatiser') d.automate = true; }
+    else if (f === 'projectName') {
+      const v = t.value.trim(), hint = body.querySelector('[data-proj-hint]');
+      const ex = projects().find((p) => p.name.toLowerCase() === v.toLowerCase());
+      if (hint) hint.textContent = v && !ex ? `Nouveau projet « ${v} » : créé à l’enregistrement.` : '';
+    }
     else if (f === 'delegate') { delegateTo(d, t.value || null, { save: false }); part('deleg', delegHtml()); }
     else if (f === 'followUp') d.followUp = t.value || null;
     else if (f === 'projectId') {
@@ -455,6 +473,18 @@ export function openTaskEditor(idOrPreset = null) {
   });
 
   function commit() {
+    // Projet : nom existant -> ce projet ; nouveau nom -> projet créé ; vide -> sans projet
+    const pn = body.querySelector('[data-f="projectName"]');
+    if (pn) {
+      const v = pn.value.trim();
+      if (!v) d.projectId = null;
+      else {
+        let p = projects().find((x) => x.name.toLowerCase() === v.toLowerCase());
+        if (!p) { p = newProject({ name: v }); putProject(p); toast(`Projet « ${v} » créé.`); }
+        d.projectId = p.id;
+      }
+    }
+    if (!d.motivation) d.motivation = 2; // la fiche affichait 2 par défaut
     // Successeurs (stockés sur les autres tâches)
     for (const id of origSuccs) if (!succIds.includes(id)) {
       const s = db.tasks[id]; if (s) { s.preds = s.preds.filter((p) => p.id !== d.id); putTask(s, { silent: true }); }

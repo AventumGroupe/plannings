@@ -52,7 +52,7 @@ test('déléguer à une personne absente : alerte', async ({ page }) => {
     const t = store.newTask({ title: 'Commande matériel' }); store.putTask(t);
     delegation.delegateTo(t, p.id);
   }, LINK);
-  await page.goto('/#taches');
+  await page.goto('/#journee');
   await expect(page.locator('.card.wait')).toContainText('absent(e) du 9 nov. au 20 nov.');
 });
 

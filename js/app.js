@@ -1,10 +1,11 @@
 // Application : navigation, réglages, synchronisation automatique, installation.
 
-import { db, onChange, setSettings, local, exportJson, replaceDb, mergeRemote, tasks, newTask, putTask, newProject, putProject, newResource, putResource, save } from './store.js';
+import { db, decisionsFor, onChange, setSettings, local, exportJson, replaceDb, mergeRemote, tasks, newTask, putTask, newProject, putProject, newResource, putResource, save } from './store.js';
 import { rollOverdue, propagate } from './sched.js';
 import { renderList } from './list.js';
 import { renderMatrix } from './matrix.js';
 import { renderToday } from './today.js';
+import { renderDecision, toDecideCount } from './decision.js';
 import { rhSync, rhConfigured, rhInfo, rhLink, setRhLink, parseLink } from './rh.js';
 import { resumeFocus } from './focus.js';
 import { renderCalendar, calendarRoute, setCalendarHooks } from './calendar.js';
@@ -20,18 +21,19 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '2.8.2';
+const VERSION = '3.0.0';
 const TABS = [
-  { id: 'taches', label: 'Tâches', icon: 'list', render: renderList },
-  { id: 'journee', label: 'Journée', icon: 'today', render: renderToday },
+  { id: 'journee', label: 'Journée', icon: 'today', render: renderToday, main: true },
+  { id: 'decision', label: 'Décision', icon: 'bulb', render: renderDecision, main: true },
+  { id: 'liste', label: 'Liste', icon: 'list', render: renderList, main: true },
   { id: 'matrice', label: 'Matrice', icon: 'grid', render: renderMatrix },
-  { id: 'calendrier', label: 'Calendrier', icon: 'calendar', render: renderCalendar },
+  { id: 'calendrier', label: 'Calendrier', icon: 'calendar', render: renderCalendar, main: true },
   { id: 'gantt', label: 'Gantt', icon: 'gantt', render: renderGantt },
   { id: 'ressources', label: 'Ressources', icon: 'people', render: renderResources },
   { id: 'reglages', label: 'Réglages', icon: 'settings', render: renderSettings },
 ];
 
-let current = 'taches';
+let current = 'journee';
 let installEvent = null;
 
 // ---------- Thème ----------
@@ -43,12 +45,14 @@ function applyTheme() {
 
 // ---------- Navigation ----------
 function route() {
-  const [tab, ...rest] = (location.hash.replace(/^#\/?/, '') || 'taches').split('/');
-  current = TABS.some((t) => t.id === tab) ? tab : 'taches';
+  let [tab, ...rest] = (location.hash.replace(/^#\/?/, '') || 'journee').split('/');
+  if (tab === 'taches') tab = 'liste'; // ancien nom
+  current = TABS.some((t) => t.id === tab) ? tab : 'journee';
   if (current === 'calendrier') calendarRoute(rest);
   if (current === 'journee' && rest[0] === 'revue') { history.replaceState(null, '', '#journee'); import('./review.js').then((m) => m.openReview()); }
   const focusSync = current === 'reglages' && rest[0] === 'sync';
   document.querySelectorAll('[data-tab]').forEach((a) => a.classList.toggle('on', a.dataset.tab === current));
+  document.querySelector('[data-more-nav]')?.classList.toggle('on', !TABS.find((t) => t.id === current)?.main);
   render();
   if (focusSync) setTimeout(() => document.querySelector('[data-sync-card]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 }
@@ -59,7 +63,8 @@ function render() {
   document.body.dataset.view = current;
   const y = window.scrollY;
   tab.render(main);
-  if (current !== 'taches') window.scrollTo(0, y);
+  window.scrollTo(0, y);
+  updateBadges();
 }
 let pendingRender = false;
 const rerender = debounce(() => {
@@ -73,26 +78,40 @@ const rerender = debounce(() => {
 }, 60);
 
 function shell() {
-  const nav = TABS.map((t) => `<a href="#${t.id}" data-tab="${t.id}">${icon(t.icon, 20)}<span>${t.label}</span></a>`).join('');
+  const link = (t) => `<a href="#${t.id}" data-tab="${t.id}">${icon(t.icon, 20)}<span>${t.label}</span>${t.id === 'decision' ? '<i class="nav-badge" data-badge-decision hidden></i>' : ''}</a>`;
+  const nav = TABS.map(link).join('');
+  // Téléphone : 4 onglets principaux + « Plus »
+  const bottom = TABS.filter((t) => t.main).map(link).join('') + `<button class="more-btn" data-more-nav aria-label="Plus">${icon('more', 20)}<span>Plus</span></button>`;
+  const moreMenu = `<div class="more-menu" data-more-menu hidden>${TABS.filter((t) => !t.main).map(link).join('')}</div>`;
   document.getElementById('app').innerHTML = `
     <header class="topbar">
-      <a class="brand" href="#taches"><img src="icons/icon.svg" alt="" width="28" height="28"><span>Gestion des plannings</span></a>
+      <a class="brand" href="#journee"><img src="icons/icon.svg" alt="" width="28" height="28"><span>Gestion des plannings</span></a>
       <nav class="tabs" aria-label="Navigation">${nav}</nav>
       <span class="spacer"></span>
       <button class="icon-btn as-btn" data-assistant title="Assistant" aria-label="Assistant">${icon('spark', 20)}</button>
       <button class="sync-ind" data-syncnow title="Synchronisation"></button>
     </header>
     <main id="view" tabindex="-1"></main>
-    <nav class="bottom-nav" aria-label="Navigation">${nav}</nav>
+    <nav class="bottom-nav" aria-label="Navigation">${bottom}</nav>${moreMenu}
     <button class="fab" data-add aria-label="Nouvelle tâche">${icon('plus', 26)}</button>`;
   document.body.addEventListener('click', (e) => {
     if (e.target.closest('[data-add]')) openTaskEditor();
+    const mm = document.querySelector('[data-more-menu]');
+    if (e.target.closest('[data-more-nav]')) { mm.hidden = !mm.hidden; return; }
+    if (mm && !mm.hidden && !e.target.closest('[data-more-menu]')) mm.hidden = true;
+    if (e.target.closest('[data-more-menu] a')) mm.hidden = true;
     if (e.target.closest('[data-assistant]')) import('./assistant.js').then((m) => m.openAssistant());
     if (e.target.closest('[data-syncnow]')) {
       if (ms.needsReauth()) ms.reconnect(); else if (ms.isConnected() || ghConfigured()) manualSync(); else location.hash = '#reglages/sync';
     }
   });
   updateSyncIndicator();
+}
+
+/** Pastille du nombre de tâches à trancher sur l'onglet Décision. */
+function updateBadges() {
+  const n = toDecideCount();
+  document.querySelectorAll('[data-badge-decision]').forEach((b) => { b.hidden = !n; b.textContent = n > 99 ? '99+' : n; });
 }
 
 const syncStatus = () => (ms.isConnected() || ms.needsReauth() || !ghConfigured() ? ms.getStatus() : ghStatus());
@@ -150,7 +169,7 @@ function renderSettings(el) {
   const rem = [null, 0, 5, 10, 15, 30, 60];
   el.innerHTML = `
     <section class="view settings">
-      <h2>Réglages</h2>
+      <header class="set-top"><h2>Réglages</h2><span class="badge accent">Version ${VERSION}</span></header>
 
       <section class="card set">
         <h3>${icon('user', 18)} Profil ${info('profil')}</h3>
@@ -211,9 +230,9 @@ function renderSettings(el) {
           <p class="ok-text">${icon('check', 16)} <b>${esc(ms.accountLabel())}</b></p>
           <div class="row wrap gap">
             <label class="switch"><input type="checkbox" data-mstodo ${ms.useTodo() ? 'checked' : ''}><span></span> Microsoft To Do</label>
-            <label class="switch"><input type="checkbox" data-msagenda ${ms.useAgenda() ? 'checked' : ''}><span></span> Agenda Outlook</label>
+            <label class="switch"><input type="checkbox" data-msagenda ${ms.useAgenda() ? 'checked' : ''}><span></span> Lire l’agenda Outlook</label>
             <label class="switch"><input type="checkbox" data-msflags ${ms.useFlags() ? 'checked' : ''}><span></span> Mails marqués ${icon('alert', 14)}</label>
-            ${info('', 'Microsoft To Do : les tâches sans heure précise vont dans la liste « Plannings » (titre, échéance, statut, importance, rappel) et leurs sous-tâches deviennent des « étapes » To Do, dans les deux sens. Agenda Outlook : les tâches avec une heure précise deviennent des rendez-vous. Si l’agenda est désactivé, toutes les tâches vont dans To Do. Mails marqués : chaque mail marqué d’un drapeau dans Outlook devient une tâche (15 min, à trier) ; la cocher dans l’application retire le drapeau.')}
+            ${info('', 'Microsoft To Do : toutes vos tâches vont dans la liste « Plannings » (titre, échéance, statut, importance, rappel) et leurs sous-tâches deviennent des « étapes » To Do, dans les deux sens. Agenda Outlook : vos rendez-vous sont lus (calendrier 360, créneaux libres) ; Plannings n’y crée plus rien. Mails marqués : chaque mail marqué d’un drapeau dans Outlook devient une tâche (15 min, à trier) ; la cocher dans l’application retire le drapeau.')}
           </div>
           ${ms.useFlags() ? `<div class="row wrap gap mail-filter">
             <label class="switch"><input type="checkbox" data-msfilter ${ms.useMailFilter() ? 'checked' : ''}><span></span> Seulement les mails qui appellent une réponse</label>
@@ -247,12 +266,6 @@ function renderSettings(el) {
             <label class="field"><span>ID d’application (client)</span>
               <input type="text" data-clientid value="${esc(local.get('msClientId', ''))}" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false" autocomplete="off"></label>
           </details>`}
-        <hr>
-        <div class="row wrap gap">
-          <button class="icon-btn" data-act="export" title="Exporter une sauvegarde (.json)" aria-label="Exporter">${icon('download', 18)}</button>
-          <label class="icon-btn" title="Importer une sauvegarde" aria-label="Importer">${icon('upload', 18)}<input type="file" accept="application/json,.json" data-import hidden></label>
-          <span class="muted sm">Sauvegarde</span>${info('sauvegarde')}
-        </div>
       </section>
 
       <section class="card set" data-rh-card>
@@ -269,7 +282,7 @@ function renderSettings(el) {
         ${!notifSupported() ? '<p class="muted">Non pris en charge.</p>'
           : `<div class="row gap"><label class="switch"><input type="checkbox" data-notif ${notifEnabled() ? 'checked' : ''}><span></span> Notifications</label>
              ${notifEnabled() ? `<button class="icon-btn xs" data-act="testnotif" title="Tester">${icon('bell', 16)}</button>` : ''}</div>
-             <p class="muted sm">${isNativeNotif() ? 'Notifications Android : rappels, résumé du matin, relances de délégation, revue du vendredi et fin de séance, même application fermée.' : 'Sur le web, les rappels s’affichent tant que la page est ouverte. Pour les recevoir application fermée, utilisez l’application Android.'}</p>`}
+             <p class="muted sm">${isNativeNotif() ? 'Notifications Android : rappels, résumé du matin, relances de délégation, revue du lundi et fin de séance, même application fermée.' : 'Sur le web, les rappels s’affichent tant que la page est ouverte. Pour les recevoir application fermée, utilisez l’application Android.'}</p>`}
       </section>
 
       <section class="card set">
@@ -277,20 +290,26 @@ function renderSettings(el) {
         ${slider('theme', { values: ['light', 'auto', 'dark'], labels: ['Clair', 'Auto', 'Sombre'], value: S.theme, ticks: 'labels' })}
       </section>
 
-      <section class="card set">
-        <h3>Installer ${info('installer')}</h3>
-        ${standalone ? `<p class="ok-text">${icon('check', 16)} Installée</p>`
-          : installEvent ? `<button class="btn primary" data-act="install">Installer</button>` : '<p class="muted sm">Menu du navigateur → Installer</p>'}
-      </section>
+      ${standalone ? '' : `<section class="card set install-card">
+        <h3>${icon('download', 18)} Installer sur cet ordinateur ${info('installer')}</h3>
+        <p class="muted sm">Plannings s’ouvre alors dans sa propre fenêtre, avec une icône sur le bureau et dans la barre des tâches, et fonctionne hors connexion.</p>
+        ${installEvent ? `<button class="btn primary" data-act="install">${icon('download', 16)} Installer l’application</button>` : '<p class="sm">Chrome ou Edge : cliquez sur l’icône <b>Installer</b> à droite de la barre d’adresse (ou menu ⋮ → « Installer Gestion des plannings »).</p>'}
+      </section>`}
 
-      <section class="card set">
-        <h3>Données</h3>
-        <p class="muted sm">${tasks().length} tâches · ${Object.keys(db.projects).length} projets · ${Object.keys(db.resources).length} ressources · v${VERSION}</p>
+      <details class="card set adv-set">
+        <summary><h3>Avancé</h3><span class="muted sm">Sauvegarde, restauration, données</span></summary>
+        <p class="muted sm">${tasks().length} tâches · ${Object.keys(db.projects).length} projets · ${Object.keys(db.resources).length} ressources · version ${VERSION}</p>
         <div class="row wrap gap">
-          <button class="btn ghost sm" data-act="demo">Exemple</button>
-          <button class="btn ghost sm danger-text" data-act="wipe">${icon('trash', 16)} Tout effacer</button>
+          <button class="btn sm" data-act="export">${icon('download', 16)} Sauvegarder (.json)</button>
+          <label class="btn sm">${icon('upload', 16)} Restaurer<input type="file" accept="application/json,.json" data-import hidden></label>
+          ${info('sauvegarde')}
         </div>
-      </section>
+        <hr>
+        <div class="row wrap gap">
+          <button class="btn ghost sm" data-act="demo">Charger des données d’exemple</button>
+          <button class="btn ghost sm danger-text" data-act="wipe">${icon('trash', 16)} Tout effacer sur cet appareil</button>
+        </div>
+      </details>
     </section>`;
 
   const root = el.querySelector('.settings');
@@ -379,7 +398,7 @@ function renderSettings(el) {
     if (act === 'rhsync') { const ok = await rhSync(true); render(); toast(ok ? 'Congés et absences actualisés.' : `Plateforme RH : ${rhInfo()?.error || 'lecture impossible'}`); }
     if (act === 'testnotif') show('Gestion des plannings', 'Les rappels fonctionnent 👍', 'test');
     if (act === 'install' && installEvent) { installEvent.prompt(); await installEvent.userChoice; installEvent = null; render(); }
-    if (act === 'demo') { loadDemo(); toast('Exemple chargé : voyez la liste, le calendrier et le Gantt.'); location.hash = '#gantt'; }
+    if (act === 'demo') { loadDemo(); toast('Exemple chargé : la moitié des tâches attend votre décision.'); location.hash = '#decision'; }
     if (act === 'wipe') {
       if (await confirmDialog('Effacer toutes les données de cet appareil ? (Une copie OneDrive éventuelle n’est pas supprimée.)', { ok: 'Tout effacer' })) {
         replaceDb({}); local.set('outlookEvents', []); toast('Données effacées.');
@@ -417,6 +436,8 @@ function loadDemo() {
   mk({ title: 'Préparer la déclaration de TVA', urgency: 5, importance: 5, energy: 1, estimate: 90, due: date(3) });
   mk({ title: 'Appeler un nouveau client', urgency: 2, importance: 4, energy: 4, estimate: 30, start: at(2, 15), end: at(2, 15, 30) });
   mk({ title: 'Classer les mails', urgency: 2, importance: 1, energy: 2, estimate: 45 });
+  // v3 : motivations d'exemple, et la moitié des tâches déjà tranchées (le reste dans l'onglet Décision)
+  tasks().forEach((t, i) => { t.motivation = [3, 2, 4, 1, 3, 4, 2, 3][i % 8]; if (i % 2 === 0) t.decision = { key: decisionsFor(t)[0], at: Date.now() }; });
   propagate(tasks().map((t) => t.id));
   save('demo');
 }

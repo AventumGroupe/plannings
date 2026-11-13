@@ -78,8 +78,15 @@ export function suggestions(analysis = analyze()) {
     });
   }
 
+  // 1c. Repoussée 3 fois : à trancher de nouveau
+  for (const t of open.filter((t) => (t.slips || 0) >= 3 && t.decision?.key).slice(0, 3)) {
+    push({ key: `slips:${t.id}:${t.slips}`, kind: 'slips', tone: 'danger', taskId: t.id, title: `Repoussée ${t.slips} fois`,
+      text: `« ${t.title} » glisse sans cesse : faut-il la déléguer, la découper ou l’abandonner ?`,
+      actions: [{ label: 'Trancher de nouveau', run: () => { t.decision = null; putTask(t); return 'Elle est de retour dans l’onglet Décision.'; } }] });
+  }
+
   // 2. Urgent et important non planifié
-  for (const t of open.filter((t) => !t.delegate && !t.start && category(t) === 'priorite').sort((a, b) => score(b) - score(a)).slice(0, 3)) {
+  for (const t of open.filter((t) => !t.delegate && !t.start && category(t) === 'prioriser').sort((a, b) => score(b) - score(a)).slice(0, 3)) {
     const slot = proposeSlot(t, { morning: t.energy <= 2 });
     if (!slot) continue;
     push({
@@ -91,7 +98,7 @@ export function suggestions(analysis = analyze()) {
   }
 
   // 3. Plombantes à faire le matin
-  for (const t of open.filter((t) => t.energy <= 2 && !t.start && !t.delegate && (isLeader() ? !['deleguer', 'collaborer', 'cote'].includes(category(t)) : category(t) !== 'cote')).sort((a, b) => score(b) - score(a)).slice(0, 4)) {
+  for (const t of open.filter((t) => t.energy <= 2 && !t.start && !t.delegate && (isLeader() ? !['urg_lourd', 'imp_lourd', 'urg_second', 'expedier'].includes(category(t)) : category(t) !== 'urg_second')).sort((a, b) => score(b) - score(a)).slice(0, 4)) {
     const slot = proposeSlot(t, { morning: true });
     if (!slot) continue;
     push({
@@ -123,14 +130,12 @@ export function suggestions(analysis = analyze()) {
   // 5. À déléguer / confier : catégories « déléguer ou automatiser » et « avec un collaborateur »
   for (const t of isLeader() ? open : []) {
     if (t.delegate) continue;
-    const c = category(t);
-    if (c !== 'deleguer' && c !== 'collaborer') continue;
+    // v3 : la décision se prend dans l'onglet Décision ; ici on rappelle seulement à qui confier.
+    if (t.decision?.key !== 'deleguer') continue;
     push({
-      key: `delegate:${t.id}`, kind: 'delegate', tone: c === 'deleguer' ? 'warn' : 'energy', taskId: t.id,
-      title: c === 'deleguer' ? 'Déléguer ou automatiser' : 'Confier à un collaborateur',
-      text: c === 'deleguer'
-        ? `« ${t.title} » est urgente et importante mais plombante : confiez-la ou automatisez-la.`
-        : `« ${t.title} » est importante, pas urgente, mais plombante : planifiez-la dans le temps avec un collaborateur.`,
+      key: `delegate:${t.id}`, kind: 'delegate', tone: 'warn', taskId: t.id,
+      title: 'À confier : choisir la personne',
+      text: `Vous avez décidé de déléguer « ${t.title} » : à qui la confier ?`,
       actions: team.length
         ? team.filter((p) => !absenceOf(p.name)).concat(team.filter((p) => absenceOf(p.name))).slice(0, 4).map((p) => ({ label: `Confier à ${p.name}${absenceOf(p.name) ? ' (absent)' : ''}`, run: () => { delegateTo(t, p.id); return `Confiée à ${p.name}. Elle apparaît dans « En attente de… ».`; } }))
         : [{ label: 'Ajouter une personne', href: '#ressources' }],
@@ -159,7 +164,7 @@ export function suggestions(analysis = analyze()) {
     push({ key: `split:${t.id}:${t.estimate}`, kind: 'split', tone: 'energy', taskId: t.id,
       title: 'Découper en séances',
       text: `« ${t.title} » (${fmtDuration(t.estimate)}) : ${r.text}`,
-      actions: [{ label: `Planifier ${r.n} séances`, run: () => planSessions(t, { spread: t.energy <= 2 && category(t) === 'collaborer' }) }] });
+      actions: [{ label: `Planifier ${r.n} séances`, run: () => planSessions(t, { spread: t.energy <= 2 && category(t) === 'imp_lourd' }) }] });
   }
 
   // 6e. Récurrente et plombante : candidate à l'automatisation (Loehr & Schwartz)

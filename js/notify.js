@@ -1,6 +1,6 @@
 // Rappels et notifications.
 // - Application Android (APK) : notifications natives programmées à l'avance (rappels, résumé du matin,
-//   relances de délégation, revue du vendredi, fin de séance) : elles arrivent même application fermée.
+//   relances de délégation, revue du lundi, fin de séance) : elles arrivent même application fermée.
 // - Version web : l'application affiche les rappels tant qu'elle est ouverte (ou en arrière-plan récent).
 
 import { db, tasks, local, ownAbsentOn } from './store.js';
@@ -37,7 +37,7 @@ export function disableNotifications() {
   if (isNativeNotif()) cancelAllNative();
 }
 
-export async function show(title, body, tag, url = './#taches') {
+export async function show(title, body, tag, url = './#journee') {
   if (isNativeNotif()) {
     try { await LN().schedule({ notifications: [{ id: nid(tag + Date.now()), title, body, schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true }, extra: { url } }] }); } catch (e) { console.warn(e); }
     return;
@@ -92,15 +92,15 @@ export function upcoming(days = 7, now = Date.now()) {
     const body = digestFor(day);
     if (body) add(`digest:${toDateStr(day)}`, at.getTime(), 'Votre journée', body, './#journee');
   }
-  // Revue de la semaine : dernier jour travaillé, 16 h, si pas encore faite
-  const lastWd = Math.max(...S.workDays.map((d) => (d + 6) % 7));
+  // Revue de la semaine : premier jour travaillé, 9 h, si pas encore faite
+  const firstWd = Math.min(...S.workDays.map((d) => (d + 6) % 7));
   for (let i = 0; i <= days; i++) {
     const day = addDays(startOfDay(new Date(now)), i);
-    if ((day.getDay() + 6) % 7 !== lastWd) continue;
-    const ws = addDays(day, -lastWd);
+    if ((day.getDay() + 6) % 7 !== firstWd) continue;
+    const ws = addDays(day, -firstWd);
     if (local.get('lastReview', '') === toDateStr(ws)) continue;
-    const at = new Date(day); at.setHours(16, 0, 0, 0);
-    add(`review:${toDateStr(day)}`, at.getTime(), 'Revue de la semaine', '15 minutes pour boucler la semaine et préparer la suivante.', './#journee/revue');
+    const at = new Date(day); at.setHours(9, 0, 0, 0);
+    add(`review:${toDateStr(day)}`, at.getTime(), 'Revue de la semaine', '15 minutes pour faire le bilan et préparer la semaine.', './#journee/revue');
   }
   // Fin de la séance de concentration en cours
   const f = local.get('focus', null);

@@ -11,7 +11,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // numéro de version croissant : le numéro de construction GitHub (0 en local)
         versionCode runNumber + 100  // au-dessus des versions publiées depuis l’ancien dépôt
-        versionName "2.8." + runNumber
+        versionName "3.0." + runNumber
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

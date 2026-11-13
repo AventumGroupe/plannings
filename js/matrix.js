@@ -2,7 +2,7 @@
 // On glisse une tâche pour changer son urgence, son importance ou son énergie.
 // Chaque zone rappelle, dans une bulle, la décision à prendre selon le profil.
 
-import { db, tasks, projects, putTask, local, setSettings, category, catInfo, isLeader, ENERGY, score, progressOf } from './store.js';
+import { db, tasks, projects, putTask, local, setSettings, category, catInfo, isLeader, ENERGY, score, progressOf, emScore } from './store.js';
 import { openTaskEditor } from './editor.js';
 import { enableDrag, makeGhost, dropTarget } from './drag.js';
 import { slider, bindSliders, info, toast } from './ui.js';
@@ -13,32 +13,15 @@ import { openDialog } from './ui.js';
 const M = Object.assign({ project: '', done: false }, local.get('matrix', {}));
 const persist = () => local.set('matrix', M);
 
-/** Décision à prendre par zone, selon le profil. */
-const DECISIONS = {
-  dirigeant: {
-    priorite: 'Faire maintenant, soi-même. Bloquer un créneau aujourd’hui ou demain.',
-    deleguer: 'Déléguer à un collaborateur ou automatiser. Garder seulement le contrôle du résultat et une date de retour.',
-    planifier: 'Planifier dans l’agenda sur un créneau de bonne énergie. C’est ici que se construit l’avenir de l’entreprise.',
-    collaborer: 'Planifier dans le temps et confier à un collaborateur, avec une échéance et un point d’étape.',
-    cote: 'Laisser de côté : ne pas laisser l’urgence décider. À traiter en 5 minutes seulement si c’est vraiment rapide, sinon refuser ou reporter.',
-    reste: 'Plus tard ou abandonner. Revoir une fois par semaine ce qui peut être supprimé.',
-  },
-  collaborateur: {
-    priorite: 'Faire maintenant. Bloquer un créneau aujourd’hui ou demain.',
-    deleguer: 'Au meilleur moment : tout début de matinée, en séance courte, puis enchaîner avec une tâche dynamisante. Prévenir son responsable si la charge est trop lourde.',
-    planifier: 'Planifier dans l’agenda, de préférence quand l’énergie est haute.',
-    collaborer: 'À planifier au calme : étaler en séances de 45 min sur plusieurs matinées, jamais deux tâches plombantes d’affilée.',
-    cote: 'Laisser de côté. Si l’urgence est imposée, en parler à son responsable pour arbitrer.',
-    reste: 'Plus tard. Revoir chaque semaine ce qui peut être abandonné.',
-  },
-};
+/** Décision à prendre par zone : texte de la situation, selon le profil (v3). */
+const DECISIONS = new Proxy({}, { get: () => new Proxy({}, { get: (_, k) => catInfo(k).hint }) });
 
 // Zones : [catégorie dynamisante, catégorie plombante, colonnes (urgence), lignes (importance haut -> bas)]
 const ZONES = [
-  { key: 'ui', dyn: 'priorite', plomb: 'deleguer', u: [4, 5], i: [4, 5] },
-  { key: 'i', dyn: 'planifier', plomb: 'collaborer', u: [1, 3], i: [4, 5] },
-  { key: 'u', dyn: 'cote', plomb: 'cote', u: [4, 5], i: [1, 3] },
-  { key: 'r', dyn: 'reste', plomb: 'reste', u: [1, 3], i: [1, 3] },
+  { key: 'ui', dyn: 'prioriser', plomb: 'urg_lourd', u: [4, 5], i: [4, 5] },
+  { key: 'i', dyn: 'planifier', plomb: 'imp_lourd', u: [1, 3], i: [4, 5] },
+  { key: 'u', dyn: 'expedier', plomb: 'urg_second', u: [4, 5], i: [1, 3] },
+  { key: 'r', dyn: 'plustard', plomb: 'abandon', u: [1, 3], i: [1, 3] },
 ];
 const col = (u) => u + 1;          // colonne 1 = axe
 const row = (i) => 6 - i;          // importance 5 en haut (ligne 1)
@@ -70,7 +53,7 @@ function panelHtml(kind, list) {
     <section class="mx-panel ${kind}">
       <header class="mx-head">
         <i class="mx-swatch ${kind}"></i>
-        <h3>${plomb ? 'Plombantes' : 'Dynamisantes'}</h3><small>${plomb ? 'énergie 1 – 2' : 'énergie 3 – 4'}</small>
+        <h3>${plomb ? 'Énergie × motivation basse' : 'Énergie × motivation haute'}</h3><small>${plomb ? 'score < 9' : 'score ≥ 9'}</small>
         <span class="count">${list.length}</span>
       </header>
       <div class="mx-grid">
@@ -83,8 +66,8 @@ function panelHtml(kind, list) {
 
 export function renderMatrix(el) {
   const all = tasks().filter((t) => (M.done || t.status !== 'done') && (!M.project || (M.project === '_none' ? !t.projectId : t.projectId === M.project)));
-  const dyn = all.filter((t) => t.energy >= 3);
-  const plomb = all.filter((t) => t.energy <= 2);
+  const dyn = all.filter((t) => emScore(t) >= 9);
+  const plomb = all.filter((t) => emScore(t) < 9);
   el.innerHTML = `
     <section class="view mx-view">
       <div class="mx-toolbar">
@@ -142,8 +125,9 @@ function bind(el) {
       const before = category(t);
       t.urgency = Number(cell.dataset.u);
       t.importance = Number(cell.dataset.i);
-      if (cell.dataset.panel === 'plomb' && t.energy >= 3) t.energy = 2;
-      if (cell.dataset.panel === 'dyn' && t.energy <= 2) t.energy = 3;
+      // Changer de panneau : la motivation est ajustée pour franchir le seuil de 9
+      if (cell.dataset.panel === 'plomb' && emScore(t) >= 9) t.motivation = Math.max(1, Math.floor(8 / t.energy));
+      if (cell.dataset.panel === 'dyn' && emScore(t) < 9) { t.motivation = Math.min(4, Math.ceil(9 / t.energy)); if (t.energy * t.motivation < 9) t.energy = Math.min(4, Math.ceil(9 / t.motivation)); }
       putTask(t);
       const after = category(t);
       if (after !== before) toast(`« ${t.title} » → ${catInfo(after).label}`);

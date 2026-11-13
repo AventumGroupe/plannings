@@ -225,7 +225,8 @@ export async function listCalendars() {
 
 // ---------- Règle de répartition ----------
 /** Une tâche avec une heure précise va dans l'agenda ; les autres vont dans To Do. */
-const inAgenda = (t) => useAgenda() && !!t.start && !t.allDay;
+// v3 : toutes les tâches vont dans To Do ; l'agenda Outlook est seulement lu (les rendez-vous créés auparavant par l'application sont retirés).
+const inAgenda = () => false;
 
 /** Fiche transportée dans Exchange (sans les identifiants propres à chaque élément). */
 const packTask = (t) => JSON.stringify({ ...t });
@@ -251,7 +252,7 @@ export function syncAll({ manual = false } = {}) {
       step = 'Lecture de l’agenda'; const events = agendaOn ? await readEvents(from, to) : { ours: [], external: [] };
 
       // 2. Fusion (pour chaque élément, la version la plus récente gagne)
-      const remote = { tasks: {}, projects: meta?.projects || {}, resources: meta?.resources || {}, templates: meta?.templates || {}, deleted: meta?.deleted || {}, settings: meta?.settings };
+      const remote = { tasks: {}, projects: meta?.projects || {}, resources: meta?.resources || {}, templates: meta?.templates || {}, abandons: meta?.abandons || {}, deleted: meta?.deleted || {}, settings: meta?.settings };
       const keep = (obj) => { if (obj?.id && (!remote.tasks[obj.id] || (obj.updatedAt || 0) > (remote.tasks[obj.id].updatedAt || 0))) remote.tasks[obj.id] = obj; };
       todos.forEach((x) => keep(x.data));
       events.ours.forEach((x) => keep(x.data));
@@ -370,7 +371,7 @@ async function readMeta(listId) {
 }
 
 async function writeMeta(listId) {
-  const data = JSON.stringify({ projects: db.projects, resources: db.resources, templates: db.templates || {}, deleted: db.deleted, settings: db.settings });
+  const data = JSON.stringify({ projects: db.projects, resources: db.resources, templates: db.templates || {}, abandons: db.abandons || {}, deleted: db.deleted, settings: db.settings });
   if (data === local.get('metaPushed')) return;
   await upsertExt(`/me/todo/lists/${listId}/extensions`, EXT_META, data);
   local.set('metaPushed', data);
