@@ -98,3 +98,40 @@ test('délégation : bloc « En attente de… » et relance', async ({ page }) =
   const n = await run(page, ({ store }) => store.tasks()[0].nudges.length);
   expect(n).toBe(1);
 });
+
+test('calendrier : cliquer sur un rendez-vous ouvre son détail sans casser la vue', async ({ page }) => {
+  await openApp(page);
+  await run(page, ({ store }) => {
+    store.local.set('outlookEvents', [{ id: 'e1', subject: 'Rendez-vous client', start: '2026-11-10T10:00', end: '2026-11-10T11:00', location: 'Salle A' }]);
+    store.putTask(store.newTask({ title: 'Dossier', due: '2026-11-12', motivation: 3, decision: { key: 'planifier', at: Date.now() } }));
+  });
+  await page.goto('/#calendrier/semaine/2026-11-10');
+  await page.locator('[data-ext="e1"]').click();
+  await expect(page.locator('.ev-detail')).toContainText('Salle A');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.cal-title')).toContainText('Semaine');
+  await expect(page.locator('[data-col]')).toHaveCount(7);
+  await expect(page.locator('.chip-ev.due')).toContainText('Dossier');
+  await expect(page.locator('.cal-360')).toContainText('1 rendez-vous');
+});
+
+test('matrice : 8 cases, déplacer une tâche la renvoie dans Décision', async ({ page }) => {
+  await openApp(page);
+  await run(page, ({ store }) => { store.putTask(store.newTask({ title: 'Audit', urgency: 2, importance: 5, energy: 4, motivation: 4, decision: { key: 'planifier', at: Date.now() } })); });
+  await page.goto('/#matrice');
+  await expect(page.locator('[data-cell]')).toHaveCount(8);
+  await expect(page.locator('.mx-cell.c-planifier .mx-card')).toContainText('Audit');
+  const r = await page.evaluate(async () => {
+    const s = await import('./js/store.js');
+    return { cat: s.category(s.tasks()[0]) };
+  });
+  expect(r.cat).toBe('planifier');
+});
+
+test('Gantt : « Nouveau projet » propose projet vide ou modèle', async ({ page }) => {
+  await openApp(page, { hash: '#gantt' });
+  await page.locator('[data-newproj-choose]').first().click();
+  await expect(page.locator('.np-choice')).toHaveCount(2);
+  await page.click('[data-np="tpl"]');
+  await expect(page.locator('.tpl-item')).toHaveCount(1);
+});

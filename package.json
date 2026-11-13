@@ -1,6 +1,6 @@
 {
   "name": "gestion-plannings",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "description": "Gestion des plannings - application Android (Capacitor) construite à partir de l'application web",
   "scripts": {

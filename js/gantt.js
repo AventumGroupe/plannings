@@ -6,7 +6,8 @@ import { tStart, tEnd, setSpan, shiftTo, propagate, requiredStart, analyze, woul
 import { openTaskEditor } from './editor.js';
 import { openProjectEditor, openTemplateDialog } from './resources.js';
 import { enableDrag, makeGhost, dropTarget, autoScroll } from './drag.js';
-import { toast, slider, bindSliders, info } from './ui.js';
+import { toast, slider, bindSliders, info, openDialog } from './ui.js';
+import { allTemplates } from './templates.js';
 import { pertHtml } from './pert.js';
 import { esc, icon, fmtDuration, parse, toDateStr, addDays, startOfDay, startOfWeek, sameDay, daysBetween, fmt, cap, isMobile, isoWeek, DAY, MIN } from './util.js';
 
@@ -287,12 +288,11 @@ export function renderGantt(el) {
         <span class="spacer"></span>
         ${lateCount ? `<span class="badge danger" title="Tâches qui finiront après leur échéance">${icon('alert', 13)} ${lateCount}</span>` : ''}
         ${compact ? '' : `<button class="icon-btn" data-today title="Aujourd’hui" aria-label="Aujourd’hui">${icon('calendar', 18)}</button>`}
-        <button class="icon-btn" data-fromtpl title="Nouveau projet depuis un modèle" aria-label="Depuis un modèle">${icon('copy', 18)}</button>
-        <button class="icon-btn" data-newproj title="Nouveau projet" aria-label="Nouveau projet">${icon('plus', 18)}</button>
+        <button class="btn primary sm" data-newproj-choose>${icon('plus', 16)} Nouveau projet</button>
         <button class="icon-btn" data-pdf title="Export PDF" aria-label="Export PDF">${icon('pdf', 18)}</button>
       </div>
-      ${empty ? `<div class="empty"><h3>Aucun projet planifié</h3>
-        <button class="btn primary" data-newproj>${icon('plus', 16)} Créer un projet</button></div>`
+      ${empty ? `<div class="empty g-empty"><h3>Aucun projet planifié</h3><p>Un projet regroupe des tâches liées entre elles, avec une échéance. Partez de zéro ou d’un modèle (par exemple une session de formation planifiée à rebours).</p>
+        <button class="btn primary" data-newproj-choose>${icon('plus', 16)} Créer un projet</button></div>`
         : pert ? `<div class="pert-wrap">${pertHtml(gs)}</div>`
         : compact ? `<div class="cg-wrap">${compactHtml(gs, an)}</div>`
         : `<div class="gantt-scroll">${ganttHtml(rows, an, from, to, { dayW, nameW })}</div>`}
@@ -327,6 +327,7 @@ function bind(el, { from, dayW }) {
     const mm = e.target.closest('[data-mm]');
     if (mm) { G.mobileMode = mm.dataset.mm; persist(); renderGantt(el); return; }
     if (e.target.closest('[data-pdf]')) { exportPdf(); return; }
+    if (e.target.closest('[data-newproj-choose]')) { chooseNewProject(); return; }
     if (e.target.closest('[data-fromtpl]')) { openTemplateDialog(); return; }
     if (e.target.closest('[data-newproj]')) { openProjectEditor(); return; }
     const ep = e.target.closest('[data-editproj]');
@@ -478,4 +479,22 @@ function resourcesSummary(gs) {
   return `<section class="print-res"><h2>Ressources mobilisées</h2><table><thead><tr><th>Ressource</th><th>Type</th><th>Tâches</th><th>Quantité</th></tr></thead><tbody>
     ${list.map((u) => `<tr><td>${esc(u.r.name)}</td><td>${RES_TYPES[u.r.type].label}</td><td>${u.n}</td><td>${u.qty ? `${u.qty.toLocaleString('fr-FR')} ${RES_TYPES[u.r.type].unit}` : '—'}${u.r.type === 'budget' && u.r.capacity ? ` / ${Number(u.r.capacity).toLocaleString('fr-FR')} €` : ''}</td></tr>`).join('')}
   </tbody></table></section>`;
+}
+
+/** « Nouveau projet » : partir de zéro ou d'un modèle. */
+function chooseNewProject() {
+  const tpls = allTemplates();
+  const { el, close } = openDialog({
+    title: 'Nouveau projet',
+    body: `<div class="np-choices">
+      <button class="np-choice" data-np="blank">${icon('plus', 28)}<b>Projet vide</b><small>Nom, couleur, échéance ; ajoutez ensuite vos tâches et leurs liens.</small></button>
+      <button class="np-choice" data-np="tpl">${icon('copy', 28)}<b>Depuis un modèle</b><small>${tpls.length} modèle(s) : les étapes sont planifiées à rebours depuis la date clé.</small></button>
+    </div>
+    <p class="hint">Astuce : dans la fiche d’une tâche, tapez un nom de projet pour le créer à la volée.</p>`,
+  });
+  el.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-np]'); if (!c) return;
+    close();
+    if (c.dataset.np === 'blank') openProjectEditor(); else openTemplateDialog();
+  });
 }

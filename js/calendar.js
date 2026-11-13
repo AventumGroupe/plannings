@@ -1,6 +1,7 @@
 // Vue calendrier : jour / semaine / mois, glisser-déposer, événements Outlook.
 
-import { db, tasks, putTask, save, local, externalEvents as outlookEvents, score, ENERGY } from './store.js';
+import { db, tasks, putTask, save, local, externalEvents as outlookEvents, score, ENERGY, needsDecision, isDeferred, uiScore, emScore, effUrgency } from './store.js';
+import { scoreBadges, openDialog } from './ui.js';
 import { tStart, tEnd, setSpan, propagate, requiredStart, findFreeSlot, analyze } from './sched.js';
 import { openTaskEditor } from './editor.js';
 import { enableDrag, makeGhost, dropTarget, autoScroll } from './drag.js';
@@ -16,6 +17,8 @@ const VIEWS = { jour: 'day', semaine: 'week', mois: 'month' };
 const VIEW_NAMES = { day: 'jour', week: 'semaine', month: 'mois' };
 
 let state = { view: null, date: new Date(), tray: false };
+// Filtres de la vue 360° (rendez-vous, tâches, échéances, faites)
+const SHOW = Object.assign({ ev: true, task: true, due: true, done: false }, local.get('cal360', {}));
 let hooks = { sync: null, connected: () => false };
 export function setCalendarHooks(h) { hooks = { ...hooks, ...h }; }
 
@@ -26,6 +29,7 @@ export function calendarRoute(parts) {
 }
 
 function go(view, date) {
+  if (!VIEW_NAMES[view]) view = 'week';
   state.view = view; state.date = date;
   const h = `#calendrier/${VIEW_NAMES[view]}/${toDateStr(date)}`;
   if (location.hash !== h) history.replaceState(null, '', h);
@@ -53,15 +57,49 @@ function titleOf() {
 function itemsIn(from, to) {
   const out = [];
   for (const t of tasks()) {
-    if (!t.start) continue;
-    const s = tStart(t), e = tEnd(t);
-    if (s < to && e > from) out.push({ kind: 'task', t, s, e, allDay: t.allDay || daysBetween(s, new Date(e - 1)) > 0 });
+    if (t.status === 'done' && !SHOW.done) continue;
+    if (t.start && SHOW.task) {
+      const s = tStart(t), e = tEnd(t);
+      if (s < to && e > from) out.push({ kind: 'task', t, s, e, allDay: t.allDay || daysBetween(s, new Date(e - 1)) > 0 });
+    }
+    // Échéances des tâches (marqueur sur la journée), sauf si la tâche est déjà placée ce jour-là
+    if (t.due && SHOW.due && t.status !== 'done') {
+      const s = parse(t.due + 'T00:00'), e = addDays(s, 1);
+      if (s < to && e > from && !(t.start && sameDay(tStart(t), s))) out.push({ kind: 'due', t, s, e, allDay: true });
+    }
   }
   for (const ev of outlookEvents()) {
+    if (!SHOW.ev && !ev.rh) continue;
     const s = parse(ev.start), e = parse(ev.end);
     if (s < to && e > from) out.push({ kind: 'ext', ev, s, e, allDay: ev.isAllDay || daysBetween(s, new Date(e - 1)) > 0 });
   }
   return out;
+}
+
+/** Bilan de la période affichée : rendez-vous, tâches, échéances, temps libre. */
+function summaryHtml() {
+  const [from, to] = rangeOf();
+  const S = db.settings;
+  const items = itemsIn(from, to);
+  const hrs = (list) => list.reduce((m, it) => m + Math.max(0, (Math.min(it.e, to) - Math.max(it.s, from)) / 36e5), 0);
+  const evs = items.filter((it) => it.kind === 'ext' && !it.allDay && !it.ev.rh && it.ev.showAs !== 'free');
+  const tks = items.filter((it) => it.kind === 'task' && !it.allDay);
+  const dues = items.filter((it) => it.kind === 'due');
+  const late = dues.filter((it) => it.s < startOfDay(new Date())).length;
+  let work = 0;
+  for (let d = new Date(from); d < to; d = addDays(d, 1)) if (S.workDays.includes(d.getDay())) work += S.dayEnd - S.dayStart;
+  const busy = hrs(evs) + hrs(tks), free = Math.max(0, work - busy), pct = work ? Math.min(100, Math.round((busy / work) * 100)) : 0;
+  const chip = (k, label) => `<button class="chip cal-f ${SHOW[k] ? 'on' : ''}" data-show="${k}">${label}</button>`;
+  return `<div class="cal-360">
+    <div class="c360-stats">
+      <span><b>${evs.length}</b> rendez-vous · ${hrs(evs).toFixed(1).replace('.', ',')} h</span>
+      <span><b>${tks.length}</b> tâche(s) placée(s) · ${hrs(tks).toFixed(1).replace('.', ',')} h</span>
+      <span class="${late ? 'danger-text' : ''}"><b>${dues.length}</b> échéance(s)${late ? ` dont ${late} dépassée(s)` : ''}</span>
+      <span><b>${free.toFixed(0)} h</b> libres</span>
+      <span class="c360-bar ${pct > 85 ? 'full' : ''}" title="Temps occupé : ${pct} %"><i style="width:${pct}%"></i></span>
+    </div>
+    <div class="c360-filters">${chip('ev', 'Rendez-vous')}${chip('task', 'Tâches')}${chip('due', 'Échéances')}${chip('done', 'Faites')}</div>
+  </div>`;
 }
 
 /** Répartit les éléments qui se chevauchent en colonnes. */
@@ -89,9 +127,9 @@ function layoutLanes(items) {
 
 // ---------- Rendu ----------
 export function renderCalendar(el) {
-  if (!state.view) state.view = isMobile() ? 'day' : 'week';
+  if (!state.view || !VIEW_NAMES[state.view]) state.view = isMobile() ? 'day' : 'week';
   const an = analyze();
-  const unplanned = tasks().filter((t) => !t.start && t.status !== 'done').sort((a, b) => score(b) - score(a));
+  const unplanned = tasks().filter((t) => !t.start && t.status !== 'done' && !needsDecision(t) && !isDeferred(t) && !t.delegate).sort((a, b) => score(b) - score(a));
   const connected = hooks.connected();
 
   el.innerHTML = `
@@ -107,6 +145,7 @@ export function renderCalendar(el) {
         ${info('calendrier')}
         <button class="icon-btn sync-btn ${connected ? 'on' : ''}" data-sync title="${connected ? 'Synchroniser avec Outlook' : 'Connecter Outlook (réglages)'}" aria-label="Outlook">${icon('sync', 18)}</button>
       </div>
+      ${summaryHtml()}
       <div class="cal-body">
         <aside class="tray" aria-label="Tâches à planifier">
           <button class="tray-head" data-tray>
@@ -116,7 +155,7 @@ export function renderCalendar(el) {
           <ul class="tray-list">${unplanned.map((t) => `
             <li class="tray-item e${t.energy}" data-drag-task="${t.id}" data-open-task="${t.id}">
               <span class="grip">${icon('grip', 14)}</span>
-              <div><b>${esc(t.title)}</b><div class="tr-meta">${levelChip('U', t.urgency)}${levelChip('I', t.importance)}${energyChip(t.energy)}</div></div>
+              <div><b>${esc(t.title)}</b><div class="tr-meta">${scoreBadges(t, { uiScore, emScore, effUrgency })}</div></div>
             </li>`).join('') || '<li class="muted sm">Tout est planifié 👍</li>'}</ul>
         </aside>
         <div class="cal-main">${state.view === 'month' ? monthHtml(an) : gridHtml(an)}</div>
@@ -199,7 +238,11 @@ function gridHtml(an) {
 }
 
 function chipHtml(it, an) {
-  if (it.kind === 'ext') return `<div class="chip-ev ext" title="${esc(it.ev.subject)} (Outlook)">${esc(it.ev.subject || '(sans titre)')}</div>`;
+  if (it.kind === 'ext') return `<div class="chip-ev ext ${it.ev.rh ? 'rh' : ''}" data-ext="${esc(it.ev.id)}" title="${esc(it.ev.subject)} (${it.ev.rh ? 'plateforme RH' : 'Outlook'})">${esc(it.ev.subject || '(sans titre)')}</div>`;
+  if (it.kind === 'due') {
+    const lateDue = it.s < startOfDay(new Date());
+    return `<div class="chip-ev due ${lateDue ? 'late' : ''}" data-open-task="${it.t.id}" title="Échéance : ${esc(it.t.title)}">⚑ ${esc(it.t.title)}</div>`;
+  }
   const t = it.t, a = an[t.id] || {};
   const p = db.projects[t.projectId];
   const time = t.allDay ? '' : `<small>${fmt.time.format(it.s)}</small> `;
@@ -239,10 +282,10 @@ function bind(el) {
       const nd = k === 0 ? new Date() : state.view === 'day' ? addDays(d, k) : state.view === 'week' ? addDays(d, 7 * k) : new Date(d.getFullYear(), d.getMonth() + k, 1);
       go(state.view, nd); renderCalendar(el); return;
     }
-    const v = e.target.closest('[data-view]');
-    if (v) { go(v.dataset.view, state.date); renderCalendar(el); return; }
     const gd = e.target.closest('[data-goday]');
     if (gd) { go('day', parse(gd.dataset.goday)); renderCalendar(el); return; }
+    const sh = e.target.closest('[data-show]');
+    if (sh) { SHOW[sh.dataset.show] = !SHOW[sh.dataset.show]; local.set('cal360', SHOW); renderCalendar(el); return; }
     if (e.target.closest('[data-tray]')) { state.tray = !state.tray; root.classList.toggle('tray-open', state.tray); return; }
     if (e.target.closest('[data-sync]')) {
       if (hooks.connected()) hooks.sync?.(true); else location.hash = '#reglages';
@@ -251,7 +294,13 @@ function bind(el) {
     const ext = e.target.closest('[data-ext]');
     if (ext) {
       const ev = outlookEvents().find((x) => x.id === ext.dataset.ext);
-      if (ev) toast(`${ev.subject || 'Événement'} — ${fmt.time.format(parse(ev.start))} à ${fmt.time.format(parse(ev.end))} (Outlook, lecture seule)`);
+      if (ev) {
+        const s0 = parse(ev.start), e0 = parse(ev.end);
+        openDialog({ title: ev.subject || 'Rendez-vous', body: `<div class="ev-detail">
+          <p>${icon('calendar', 16)} ${ev.isAllDay ? cap(fmt.dayLong.format(s0)) + (daysBetween(s0, e0) > 1 ? ' → ' + fmt.dayLong.format(addDays(e0, -1)) : '') : `${cap(fmt.dayLong.format(s0))}, ${fmt.time.format(s0)} – ${fmt.time.format(e0)}`}</p>
+          ${ev.location ? `<p>${icon('link', 16)} ${/^https?:/.test(ev.location) ? `<a href="${esc(ev.location)}" target="_blank" rel="noopener">${esc(ev.location)}</a>` : esc(ev.location)}</p>` : ''}
+          <p class="muted sm">${ev.rh ? 'Plateforme RH' : 'Agenda Outlook'} · lecture seule</p></div>` });
+      }
       return;
     }
     const open = e.target.closest('[data-open-task]');
