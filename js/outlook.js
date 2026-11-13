@@ -182,11 +182,20 @@ async function token() {
   }
 }
 
-async function graph(path, { method = 'GET', body, headers = {} } = {}) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function graph(path, { method = 'GET', body, headers = {} } = {}, attempt = 0) {
   const url = path.startsWith('http') ? path : GRAPH + path;
   const h = { Authorization: `Bearer ${await token()}`, ...headers };
   if (body !== undefined) h['Content-Type'] = 'application/json';
-  const res = await fetch(url, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+  let res;
+  try { res = await fetch(url, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  catch (e) { if (attempt < 2 && navigator.onLine) { await sleep(1500 * (attempt + 1)); return graph(path, { method, body, headers }, attempt + 1); } throw e; }
+  // Incidents passagers côté Microsoft (trop de requêtes, erreur serveur, « UnknownError ») : on réessaie
+  if ((res.status === 429 || res.status >= 500) && attempt < 3) {
+    const wait = Number(res.headers.get('retry-after')) * 1000 || 1500 * 2 ** attempt;
+    await sleep(Math.min(wait, 10000));
+    return graph(path, { method, body, headers }, attempt + 1);
+  }
   if (!res.ok) {
     let msg = res.statusText, code = '';
     try { const j = await res.json(); msg = j.error?.message || msg; code = j.error?.code || ''; } catch {}
@@ -351,8 +360,14 @@ async function syncFlagged() {
 async function ensureList() {
   const cached = local.get('todoListId');
   if (cached) {
-    const ok = await ignore404(graph(`/me/todo/lists/${cached}`));
-    if (ok) return cached;
+    try {
+      const ok = await ignore404(graph(`/me/todo/lists/${cached}`));
+      if (ok) return cached;
+    } catch (e) {
+      // Erreur passagère (ex. « UnknownError ») : on garde la liste connue au lieu d'arrêter la synchronisation
+      if (e.status !== 401 && e.status !== 403 && !e.reauth) return cached;
+      throw e;
+    }
   }
   const lists = await pages('/me/todo/lists');
   let list = lists.find((l) => l.displayName === LIST_NAME);
