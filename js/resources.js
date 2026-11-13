@@ -9,6 +9,8 @@ import { openDialog, confirmDialog, toast, slider, bindSliders, info } from './u
 import { openTaskEditor } from './editor.js';
 import { esc, icon, parse, fmt, addDays, toDateStr } from './util.js';
 import { allTemplates, instantiate, saveAsTemplate, removeTemplate } from './templates.js';
+import { team, teamOnline, sharedList, observed, SHARE_LABEL } from './team.js';
+import { rhConfigured } from './rh.js';
 
 export function openProjectEditor(id = null) {
   const existing = id ? db.projects[id] : null;
@@ -125,6 +127,7 @@ export function renderResources(el) {
     <section class="view res-view">
       <div class="section-head"><h2>Projets</h2><span class="spacer"></span><button class="btn ghost sm" data-fromtpl>${icon('copy', 16)} Depuis un modèle</button><button class="icon-btn" data-newproj title="Nouveau projet" aria-label="Nouveau projet">${icon('plus', 20)}</button></div>
       ${ps.length ? `<ul class="res-grid">${projHtml}</ul>` : '<p class="muted">Aucun projet.</p>'}
+      ${teamHtml()}
       <div class="section-head"><h2>Ressources ${info('ressources')}</h2></div>
       <div class="res-groups">${resHtml}</div>
     </section>`;
@@ -176,4 +179,24 @@ export function openTemplateDialog() {
       if (r) { toast(`Projet « ${r.project.name} » créé : ${r.count} tâches planifiées.`); location.hash = '#gantt'; }
     }
   });
+}
+
+/** Équipe (plateforme RH) : membres, tâches confiées en ligne ; pour le dirigeant, celles entre salariés. */
+function teamHtml() {
+  if (!rhConfigured()) return `<div class="section-head"><h2>Équipe</h2></div><p class="muted sm">Reliez la plateforme RH (Réglages) pour confier des tâches en ligne à votre équipe : chacun les reçoit avec son compte et les accepte ou les refuse.</p>`;
+  const tm = team();
+  if (!tm?.moi) return `<div class="section-head"><h2>Équipe</h2></div><p class="muted sm">Synchronisation de l’équipe en cours…</p>`;
+  const list = sharedList();
+  const open = (s) => ['proposee', 'acceptee'].includes(s.statut);
+  const row = (s) => `<li class="sh-row st-${s.statut}"><span><b>${esc(s.titre)}</b><small>${esc(s.de.nom)} → ${esc(s.a.nom)}${s.echeance ? ` · échéance ${fmt.dateShort.format(new Date(s.echeance + 'T00:00'))}` : ''}${s.motif && s.statut === 'refusee' ? ` · motif : ${esc(s.motif)}` : ''}</small></span><span class="badge st-${s.statut}">${SHARE_LABEL[s.statut]}</span></li>`;
+  const sent = list.filter((s) => s.moi === 'de' && (open(s) || s.statut === 'refusee'));
+  const recv = list.filter((s) => s.moi === 'a' && open(s));
+  const obs = observed().filter((s) => open(s) || s.statut === 'refusee');
+  return `<div class="section-head"><h2>Équipe</h2><span class="badge accent">${tm.moi.dirigeant ? 'Dirigeant' : 'Salarié'} : ${esc(tm.moi.nom)}</span></div>
+    <div class="team-grid">
+      <section class="card team-card"><h3>Membres</h3><ul class="team-members">${(tm.equipe || []).map((m) => `<li><span class="avatar sm">${esc(m.nom.slice(0, 1))}</span><span>${esc(m.nom)}<small>${m.dirigeant ? 'dirigeant' : 'salarié'}${m.confiable ? '' : ' · ne peut pas recevoir de vous'}</small></span></li>`).join('') || '<li class="muted">—</li>'}</ul></section>
+      <section class="card team-card"><h3>J’ai confié</h3><ul class="sh-list">${sent.map(row).join('') || '<li class="muted sm">Rien en cours.</li>'}</ul></section>
+      <section class="card team-card"><h3>On m’a confié</h3><ul class="sh-list">${recv.map(row).join('') || '<li class="muted sm">Rien en cours.</li>'}</ul></section>
+      ${tm.moi.dirigeant ? `<section class="card team-card"><h3>Entre salariés ${info('', 'Vous voyez les tâches que vos salariés se confient entre eux.')}</h3><ul class="sh-list">${obs.map(row).join('') || '<li class="muted sm">Rien en cours.</li>'}</ul></section>` : ''}
+    </div>`;
 }

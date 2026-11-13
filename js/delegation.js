@@ -73,7 +73,7 @@ export function waitingHtml(open) {
           const n = (t.nudges || []).length;
           return `<li class="${late ? 'late' : ''}">
             <button class="link wait-title" data-open-id="${t.id}">${esc(t.title)}</button>
-            <small>${delegateAbsence(t) ? `<b class="danger-text">${esc(absenceLabel(delegateAbsence(t)))}</b> · ` : ''}confiée ${since(t.delegatedAt)}${t.followUp ? ` · retour ${late ? '<b>' : ''}${cap(fmt.dayShort.format(parse(t.followUp)))}${late ? '</b>' : ''}` : ''}${n ? ` · ${n} relance${n > 1 ? 's' : ''}` : ''}</small>
+            <small>${t.shared?.role === 'de' ? `<b class="share-st st-${t.shared.status}">${{ proposee: 'en attente d’acceptation', acceptee: 'acceptée', faite: 'faite', refusee: 'refusée', annulee: 'annulée' }[t.shared.status] || ''}</b> · ` : ''}${delegateAbsence(t) ? `<b class="danger-text">${esc(absenceLabel(delegateAbsence(t)))}</b> · ` : ''}confiée ${since(t.delegatedAt)}${t.followUp ? ` · retour ${late ? '<b>' : ''}${cap(fmt.dayShort.format(parse(t.followUp)))}${late ? '</b>' : ''}` : ''}${n ? ` · ${n} relance${n > 1 ? 's' : ''}` : ''}</small>
             <span class="wait-acts">
               <a class="btn sm ${late ? 'primary' : 'ghost'}" href="${nudgeHref(t)}" data-nudge="${t.id}">${icon('bell', 14)} Relancer</a>
               <button class="btn sm ghost" data-received="${t.id}">${icon('check', 14)} Reçu</button>

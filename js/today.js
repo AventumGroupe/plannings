@@ -5,6 +5,7 @@ import { db, tasks, putTask, save, local, outlookEvents, ownAbsentOn, rhEvents, 
 import { proposeSlot } from './sched.js';
 import { toDecideCount } from './decision.js';
 import { waitingHtml, recordNudge } from './delegation.js';
+import { incoming, acceptShared, refuseShared } from './team.js';
 import { scoreBadges } from './ui.js';
 import { isConnected as msConnected } from './outlook.js';
 import { ghConfigured } from './github.js';
@@ -206,6 +207,16 @@ function blocksHtml() {
     ${unplanned.length ? `<section class="card jr-block"><header><h3>${icon('calendar', 18)} Décidées, pas encore planifiées</h3><span class="count">${unplanned.length}</span><span class="spacer"></span><button class="btn sm" data-propose>${icon('bulb', 14)} Proposer ma journée</button></header><ul>${unplanned.map((t) => jrow(t, { place: true })).join('')}</ul></section>` : ''}`;
 }
 
+/** Tâches qu'on me propose (plateforme RH) : accepter ou refuser avec un motif. */
+function incomingHtml() {
+  const list = incoming();
+  if (!list.length) return '';
+  return `<section class="card jr-block sh-incoming"><header><h3>${icon('people', 18)} On vous propose</h3><span class="count">${list.length}</span></header>
+    <ul>${list.map((s) => `<li class="sh-in"><div class="sh-in-main"><b>${esc(s.titre)}</b><small>de ${esc(s.de.nom)}${s.echeance ? ` · échéance ${fmt.dateShort.format(new Date(s.echeance + 'T00:00'))}` : ''}${s.estimation_min ? ` · ${fmtDuration(s.estimation_min)}` : ''}${s.projet ? ` · ${esc(s.projet)}` : ''}</small>${s.description ? `<p>${esc(s.description).slice(0, 300)}</p>` : ''}</div>
+      <div class="sh-in-acts"><button class="btn primary sm" data-sh-accept="${esc(s.id)}">${icon('check', 14)} Accepter</button><button class="btn ghost sm" data-sh-refuse="${esc(s.id)}">Refuser</button></div>
+      <div class="sh-motif" hidden><input type="text" placeholder="Motif du refus (obligatoire)"><button class="btn sm" data-sh-refuse-ok="${esc(s.id)}">Envoyer</button></div></li>`).join('')}</ul></section>`;
+}
+
 export function renderToday(el) {
   const e = energyNow();
   const cands = nowCandidates(e);
@@ -228,6 +239,7 @@ export function renderToday(el) {
         ${info('', 'Indiquez comment vous vous sentez : la tâche proposée s’adapte. En forme, on attaque le plus difficile ; fatigué, on choisit du dynamisant ou du rapide.')}
       </div>
 
+      ${incomingHtml()}
       ${toDecideCount() ? `<a class="card review-banner decide-banner" href="#decision">${icon('bulb', 20)}<div><b>${toDecideCount()} tâche${toDecideCount() > 1 ? 's' : ''} à trancher</b><span>Tant qu’elles ne sont pas décidées, elles ne sont ni planifiées ni proposées.</span></div><span class="btn primary sm">Trancher</span></a>` : ''}
       ${!msConnected() && !ghConfigured() ? `<a class="card sync-banner" href="#reglages/sync">${icon('sync', 20)}<div><b>Cet appareil n’est pas synchronisé</b><span>Connectez-le une fois pour retrouver les mêmes tâches partout.</span></div><span class="btn primary sm">Connecter</span></a>` : ''}
       ${t ? `<section class="card now-card e${t.energy}">
@@ -268,6 +280,17 @@ function bind(el) {
     const f = ev.target.closest('[data-focus]');
     if (f) { const m = await import('./focus.js'); m.startFocus(db.tasks[f.dataset.focus]); return; }
     if (ev.target.closest('[data-propose]')) { openProposal(el); return; }
+    const acc = ev.target.closest('[data-sh-accept]');
+    if (acc) { acc.disabled = true; try { await acceptShared(acc.dataset.shAccept); toast('Acceptée : elle vous attend dans Décision (notez votre motivation).'); } catch (e) { toast(e.message, { tone: 'danger' }); } renderToday(el); return; }
+    const rf = ev.target.closest('[data-sh-refuse]');
+    if (rf) { const box = rf.closest('.sh-in').querySelector('.sh-motif'); box.hidden = false; box.querySelector('input').focus(); return; }
+    const rfo = ev.target.closest('[data-sh-refuse-ok]');
+    if (rfo) {
+      const motif = rfo.closest('.sh-motif').querySelector('input').value.trim();
+      if (!motif) { toast('Indiquez le motif du refus.'); return; }
+      try { await refuseShared(rfo.dataset.shRefuseOk, motif); toast('Refus envoyé.'); } catch (e) { toast(e.message, { tone: 'danger' }); }
+      renderToday(el); return;
+    }
     const dn = ev.target.closest('[data-jdone]');
     if (dn) { const m = await import('./list.js'); m.toggleDone(db.tasks[dn.dataset.jdone]); return; }
     const pl = ev.target.closest('[data-place]');

@@ -1431,3 +1431,30 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .np-choice .ico { color: var(--accent); }
 .np-choice small { color: var(--muted); }
 .g-empty p { max-width: 460px; margin: 6px auto 12px; color: var(--muted); }
+
+/* v3 : équipe et tâches confiées en ligne */
+.share-st { font-weight: 650; }
+.share-st.st-proposee, .badge.st-proposee { color: var(--warn); }
+.share-st.st-acceptee, .badge.st-acceptee { color: var(--accent); }
+.share-st.st-faite, .badge.st-faite { color: var(--ok); }
+.share-st.st-refusee, .badge.st-refusee, .share-st.st-annulee, .badge.st-annulee { color: var(--danger); }
+.badge.st-proposee { background: var(--warn-soft); } .badge.st-acceptee { background: var(--accent-soft); }
+.badge.st-faite { background: color-mix(in srgb, var(--ok) 15%, transparent); } .badge.st-refusee, .badge.st-annulee { background: var(--danger-soft); }
+.sh-incoming { border-left: 5px solid var(--accent); }
+.sh-in { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.sh-in-main { display: flex; flex-direction: column; min-width: 0; }
+.sh-in-main small { color: var(--muted); } .sh-in-main p { margin: 4px 0 0; font-size: .86rem; }
+.sh-in-acts { display: flex; gap: 6px; align-items: center; }
+.sh-motif { grid-column: 1 / -1; display: flex; gap: 6px; }
+.sh-motif input { flex: 1; }
+@media (max-width: 560px) { .sh-in { grid-template-columns: 1fr; } }
+.team-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.team-card { padding: 12px 14px; }
+.team-card h3 { margin: 0 0 8px; font-size: 1rem; }
+.team-members, .sh-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.team-members li { display: flex; align-items: center; gap: 8px; }
+.team-members li > span:last-child { display: flex; flex-direction: column; } .team-members small { color: var(--muted); font-size: .76rem; }
+.sh-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); }
+.sh-row > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sh-row small { color: var(--muted); font-size: .76rem; }
+.sh-motif[hidden], .nav-badge[hidden] { display: none !important; }

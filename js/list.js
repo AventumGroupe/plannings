@@ -10,6 +10,7 @@ import { openTaskEditor } from './editor.js';
 import { info, toast, ring, scoreBadges, openDialog } from './ui.js';
 import { esc, icon, fmt, cap, toDateStr, fmtDuration } from './util.js';
 import { toDecideCount } from './decision.js';
+import { notifyDone, SHARE_LABEL } from './team.js';
 
 const F = Object.assign({ q: '', project: '', status: 'open', closed: { reporter: true, plustard: true } }, local.get('listV3', {}));
 const persist = () => local.set('listV3', F);
@@ -42,7 +43,7 @@ function rowHtml(t, an) {
   const sp = spentOf(t);
   return `<div class="lt-row ${t.status === 'done' ? 'done' : ''}" data-id="${t.id}" style="--gc:${GROUP_COLOR[dec] || 'var(--line)'}">
     <span class="lt-c lt-check"><button class="chk ${t.status === 'done' ? 'on' : ''}" data-check aria-label="Terminer">${t.status === 'done' ? icon('check', 14) : ''}</button></span>
-    <button class="lt-c lt-title" data-open><b>${esc(t.title)}</b>${t.subtasks?.length ? `<small>${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length} étapes</small>` : ''}${t.mail ? '<small>✉ mail</small>' : ''}${(t.slips || 0) >= 3 ? `<small class="danger-text">repoussée ×${t.slips}</small>` : ''}</button>
+    <button class="lt-c lt-title" data-open><b>${esc(t.title)}</b>${t.subtasks?.length ? `<small>${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length} étapes</small>` : ''}${t.mail ? '<small>✉ mail</small>' : ''}${(t.slips || 0) >= 3 ? `<small class="danger-text">repoussée ×${t.slips}</small>` : ''}${t.shared ? `<small class="share-st st-${t.shared.status}">${t.shared.role === 'a' ? `de ${esc(t.shared.from)}` : `→ ${esc(t.shared.to)}`} · ${SHARE_LABEL[t.shared.status] || ''}${t.shared.motif && t.shared.status === 'refusee' ? ' : ' + esc(t.shared.motif) : ''}</small>` : ''}</button>
     <span class="lt-c lt-status"><button class="pill ${stc}" data-status title="Changer le statut">${stl}</button></span>
     <span class="lt-c lt-scores">${scoreBadges(t, sc)}</span>
     <span class="lt-c lt-dec"><button class="pill dec" style="--pc:${GROUP_COLOR[dec] || 'var(--muted)'}" data-dec title="Changer la décision">${esc(DECISIONS[dec]?.label || '—')}</button></span>
@@ -137,6 +138,7 @@ export function toggleDone(t) {
   if (t.status === 'done') { real.status = 'todo'; real.doneAt = null; putTask(real); return; }
   const prev = t.status;
   const next = completeTask(real);
+  notifyDone(real);
   propagate([real.id]);
   save('task');
   toast(next ? 'Bravo ! Prochaine occurrence créée.' : 'Bravo, tâche terminée !', {

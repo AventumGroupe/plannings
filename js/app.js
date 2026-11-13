@@ -8,6 +8,7 @@ import { renderToday } from './today.js';
 import { renderDecision, toDecideCount } from './decision.js';
 import { rhSync, rhConfigured, rhInfo, rhLink, setRhLink, parseLink } from './rh.js';
 import { resumeFocus } from './focus.js';
+import { teamSync, onTeam, teamOnline, team } from './team.js';
 import { renderCalendar, calendarRoute, setCalendarHooks } from './calendar.js';
 import { renderGantt } from './gantt.js';
 import { renderResources } from './resources.js';
@@ -21,7 +22,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '3.1.1';
+const VERSION = '3.2.0';
 const TABS = [
   { id: 'journee', label: 'Journée', icon: 'today', render: renderToday, main: true },
   { id: 'decision', label: 'Décision', icon: 'bulb', render: renderDecision, main: true },
@@ -173,7 +174,8 @@ function renderSettings(el) {
 
       <section class="card set">
         <h3>${icon('user', 18)} Profil ${info('profil')}</h3>
-        ${slider('role', { values: ['dirigeant', 'collaborateur'], labels: ['Dirigeant', 'Collaborateur'], value: S.role, ticks: 'labels' })}
+        ${teamOnline() ? `<p class="ok-text">${icon('check', 16)} ${S.role === 'collaborateur' ? 'Salarié' : 'Dirigeant'} : défini par votre rôle dans la plateforme RH (${esc(team().moi.nom)}).</p>`
+          : slider('role', { values: ['dirigeant', 'collaborateur'], labels: ['Dirigeant', 'Salarié'], value: S.role, ticks: 'labels' })}
       </section>
 
       <section class="card set">
@@ -338,7 +340,7 @@ function renderSettings(el) {
     if (e.target.matches('[data-rhlink]')) {
       const v = e.target.value.trim();
       if (v && !parseLink(v)) { toast('Lien attendu : https://…/agenda/<code>.ics (Plateforme RH › Mon agenda).'); return; }
-      const ok = await setRhLink(v); render();
+      const ok = await setRhLink(v); if (ok) await teamSync(true); render();
       toast(!v ? 'Plateforme RH déliée.' : ok ? 'Plateforme RH reliée : congés et absences chargés.' : `Lien enregistré, mais : ${rhInfo()?.error || 'lecture impossible'}`);
       return;
     }
@@ -395,7 +397,7 @@ function renderSettings(el) {
     if (act === 'export') download(`gestion-plannings-${toDateStr(new Date())}.json`, exportJson());
     if (act === 'notif') { const p = await enableNotifications(); toast(p === 'granted' ? 'Notifications activées.' : 'Notifications refusées.'); render(); }
     if (act === 'nonotif') { disableNotifications(); render(); }
-    if (act === 'rhsync') { const ok = await rhSync(true); render(); toast(ok ? 'Congés et absences actualisés.' : `Plateforme RH : ${rhInfo()?.error || 'lecture impossible'}`); }
+    if (act === 'rhsync') { const ok = await rhSync(true); await teamSync(true); render(); toast(ok ? 'Congés et absences actualisés.' : `Plateforme RH : ${rhInfo()?.error || 'lecture impossible'}`); }
     if (act === 'testnotif') show('Gestion des plannings', 'Les rappels fonctionnent 👍', 'test');
     if (act === 'install' && installEvent) { installEvent.prompt(); await installEvent.userChoice; installEvent = null; render(); }
     if (act === 'demo') { loadDemo(); toast('Exemple chargé : la moitié des tâches attend votre décision.'); location.hash = '#decision'; }
@@ -466,7 +468,11 @@ async function start() {
   setInterval(() => { if (rollOverdue().length) toast('Des tâches en retard ont été reportées.'); }, 10 * 60 * 1000);
   startReminders();
   resumeFocus();
-  rhSync(true).then((ok) => { if (ok) rerender(); });
+  rhSync(true).then((ok) => { if (ok) rerender(); teamSync(true); });
+  onTeam(() => { rerender(); updateBadges(); });
+  setInterval(() => { if (!document.hidden) teamSync(); }, 2 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) teamSync(); });
+  window.addEventListener('online', () => teamSync(true));
   setInterval(() => { if (!document.hidden) rhSync().then((ok) => { if (ok) rerender(); }); }, 30 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) rhSync().then((ok) => { if (ok) rerender(); }); });
 

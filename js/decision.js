@@ -14,6 +14,7 @@ import { openTaskEditor } from './editor.js';
 import { slider, bindSliders, info, toast, LV, EN, MO } from './ui.js';
 import { esc, icon, fmt, cap, uid, toDateStr, addDays, MIN } from './util.js';
 import { addWorkDays } from './templates.js';
+import { assignable, teamOnline, shareTask } from './team.js';
 
 let order = [];        // ordre de passage (« Passer » envoie la tâche en fin de file)
 let pick = null;       // décision en cours de confirmation (qui demande une précision)
@@ -41,8 +42,13 @@ function gauge(v, max, hi, label, title) {
 function extraHtml(t, key) {
   const team = people();
   if (key === 'deleguer') {
-    if (!team.length) return `<p class="hint">Ajoutez d’abord une personne dans Ressources.</p>`;
-    return `<label class="field"><span>À qui ?</span><select data-x="person">${team.map((p) => `<option value="${p.id}">${esc(p.name)}${absenceOf(p.name) ? ' (absent)' : ''}</option>`).join('')}</select></label>`;
+    const online = teamOnline() ? assignable() : [];
+    const offline = team.filter((p) => !online.some((m) => m.id === p.rhId));
+    if (!online.length && !offline.length) return `<p class="hint">Reliez la plateforme RH (Réglages) pour confier en ligne à votre équipe, ou ajoutez une personne dans Ressources.</p>`;
+    return `<label class="field"><span>À qui ?</span><select data-x="person">
+      ${online.length ? `<optgroup label="En ligne : la personne reçoit la tâche et l’accepte">${online.map((m) => `<option value="rh:${m.id}">${esc(m.nom)}${absenceOf(m.nom) ? ' (absent)' : ''}</option>`).join('')}</optgroup>` : ''}
+      ${offline.length ? `<optgroup label="Suivi seulement chez moi">${offline.map((p) => `<option value="${p.id}">${esc(p.name)}${absenceOf(p.name) ? ' (absent)' : ''}</option>`).join('')}</optgroup>` : ''}
+    </select></label>${online.length ? '<p class="hint">En ligne : elle est proposée à la personne, qui l’accepte ou la refuse (avec un motif). Votre motivation n’est jamais transmise.</p>' : ''}`;
   }
   if (key === 'reporter') return `<label class="field"><span>À revoir le</span><input type="date" data-x="date" value="${toDateStr(addWorkDays(new Date(), 10))}"></label><p class="hint">La tâche disparaît jusqu’à cette date, puis revient ici.</p>`;
   if (key === 'abandon') return `<label class="field"><span>Pourquoi ? (pour le bilan)</span><input type="text" data-x="reason" placeholder="Plus d’actualité, pas prioritaire…"></label><p class="hint">La tâche est supprimée ; elle reste dans le journal des renoncements.</p>`;
@@ -61,6 +67,11 @@ export function applyDecision(t, key, x = {}) {
   if (key === 'refuser') { abandonTask(t, `Refusée / renvoyée${x.note ? ' à ' + x.note : ''}`); return 'Refusée : notée dans le journal des renoncements.'; }
   if (key === 'deleguer') {
     if (!x.person) return 'Choisissez la personne.';
+    if (String(x.person).startsWith('rh:')) {
+      const m = assignable().find((a) => String(a.id) === String(x.person).slice(3));
+      if (!m) return 'Choisissez la personne.';
+      return shareTask(t, m).then(() => `Proposée à ${m.nom} : en attente de son acceptation.`, (e) => `Envoi impossible : ${e.message}`);
+    }
     delegateTo(t, x.person, { save: false });
     decide(t, 'deleguer');
     return `Confiée à ${db.resources[x.person]?.name}. Suivi dans « En attente de… ».`;
@@ -164,9 +175,14 @@ function bind(el, t) {
     if (q('[data-dec-ok]')) {
       const x = {};
       root.querySelectorAll('[data-x]').forEach((i) => { x[i.dataset.x] = i.value; });
-      const msg = applyDecision(t, pick, x);
-      if (msg === 'Choisissez la personne.') { toast(msg); return; }
-      done(msg);
+      const res = applyDecision(t, pick, x);
+      if (res === 'Choisissez la personne.') { toast(res); return; }
+      if (res && typeof res.then === 'function') {
+        q('[data-dec-ok]').disabled = true;
+        res.then((msg) => { if (msg.startsWith('Envoi impossible')) { toast(msg, { tone: 'danger' }); q('[data-dec-ok]') && (q('[data-dec-ok]').disabled = false); } else done(msg); });
+        return;
+      }
+      done(res);
     }
   });
   function done(msg) {
