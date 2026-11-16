@@ -167,3 +167,30 @@ test('tri des mails marqués : seuls ceux qui appellent une réponse', async ({ 
   });
   expect(r).toEqual(['promo', 'reponse', 'auto', 'auto', 'promo', 'reponse', 'auto', 'reponse']);
 });
+
+test('temps réel : seule une tâche qui tient avant le prochain rendez-vous est proposée', async ({ page }) => {
+  // il est 10 h 40 (heure de Paris) ; rendez-vous à 10 h 55 : 15 min disponibles
+  const r = await run(page, ({ store, today }) => {
+    store.local.set('outlookEvents', [{ id: 'e1', subject: 'Réunion OPCO', start: '2026-11-10T10:55', end: '2026-11-10T12:00' }]);
+    const mk = (title, estimate, energy) => store.putTask(store.newTask({ title, estimate, energy, urgency: 5, importance: 5, motivation: 4, decision: { key: 'prioriser', at: Date.now() } }));
+    mk('Rédiger le dossier', 50, 3); mk('Appeler le client', 10, 3);
+    const free = today.freeNow();
+    return { min: free.min, next: free.next, cands: today.nowCandidates(3, free).map((t) => t.title) };
+  });
+  expect(r.min).toBe(15);
+  expect(r.next).toBe('Réunion OPCO');
+  expect(r.cands).toEqual(['Appeler le client']);
+});
+
+test('une tâche cochée reste faite face à une version plus ancienne venue d’un autre appareil', async ({ page }) => {
+  const r = await run(page, ({ store }) => {
+    const t = store.newTask({ title: 'Envoyer le devis', motivation: 3 }); store.putTask(t);
+    const old = JSON.parse(JSON.stringify(t));
+    t.status = 'done'; t.doneAt = Date.now() + 1000; t.updatedAt = t.doneAt; store.putTask(t, { touch: false });
+    // l'autre appareil s'est synchronisé avec Microsoft après, sans savoir que la tâche était faite
+    old.todo = { id: 'x', syncedAt: Date.now() + 5000 };
+    store.mergeRemote({ tasks: { [t.id]: old }, projects: {}, resources: {}, deleted: {} });
+    return store.db.tasks[t.id].status;
+  });
+  expect(r).toBe('done');
+});

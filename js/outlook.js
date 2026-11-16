@@ -498,6 +498,7 @@ function applyTodoEdits(todos, listId) {
     if (item.title) t.title = item.title;
     if (due !== todoDue(t)) t.due = due;
     if (st === 'done' && t.status !== 'done') completeTask(t);
+    else if (t.status === 'done' && st !== 'done' && Date.parse(item.lastModifiedDateTime) <= (t.doneAt || 0) + 60000) { /* cochée ici après la dernière modification dans To Do : elle reste faite */ }
     else t.status = st;
     putTask(t, { silent: true }); // updatedAt > syncedAt : la fiche sera renvoyée
     n++;

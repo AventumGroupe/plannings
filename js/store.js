@@ -347,7 +347,12 @@ export function mergeRemote(remote) {
   for (const k of ['tasks', 'projects', 'resources', 'templates', 'abandons']) {
     for (const [id, item] of Object.entries(r[k])) {
       const mine = db[k][id];
-      if (!mine || modAt(item) > modAt(mine)) { db[k][id] = item; changed = true; }
+      if (!mine) { db[k][id] = item; changed = true; continue; }
+      // Une tâche terminée le reste face à toute version modifiée AVANT qu'elle soit cochée
+      // (ex. un autre appareil qui s'est synchronisé avec Microsoft entre-temps, sans le savoir).
+      if (k === 'tasks' && mine.status === 'done' && item.status !== 'done' && (item.updatedAt || 0) <= (mine.doneAt || 0)) continue;
+      if (k === 'tasks' && item.status === 'done' && mine.status !== 'done' && (mine.updatedAt || 0) <= (item.doneAt || 0)) { db[k][id] = item; changed = true; continue; }
+      if (modAt(item) > modAt(mine)) { db[k][id] = item; changed = true; }
     }
     for (const [id, item] of Object.entries(db[k])) {
       const del = db.deleted[id];

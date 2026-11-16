@@ -31,11 +31,33 @@ const setEnergyNow = (v) => local.set('energyNow', { date: todayStr(), v });
 const isLaterSession = (t) => /\(séance (?:[2-9]|\d{2,})\/\d+\)$/.test(t.title);
 
 /** Tâches classées pour « maintenant » selon l'énergie du moment. */
-export function nowCandidates(e = energyNow()) {
+/**
+ * Temps disponible maintenant : jusqu'au prochain rendez-vous ou à la prochaine tâche planifiée
+ * (ou la fin de journée). Si un élément est en cours, le temps libre est nul jusqu'à sa fin.
+ * Retourne { min, until, next, current } (next / current : libellés).
+ */
+export function freeNow(now = new Date()) {
+  const S = db.settings;
+  const endDay = new Date(now); endDay.setHours(S.dayEnd, 0, 0, 0);
+  const label = (b) => (b.kind === 'event' ? (b.ev.subject || 'Rendez-vous') : b.t.title);
+  const blocks = dayBlocks(now).filter((b) => !(b.kind === 'task' && b.t.status === 'done') && !(b.kind === 'event' && (b.ev.showAs === 'free' || b.ev.isAllDay)));
+  const current = blocks.find((b) => b.s <= now && b.e > now);
+  if (current) return { min: 0, until: current.e, next: null, current: label(current) };
+  const nextB = blocks.filter((b) => b.s > now).sort((a, b) => a.s - b.s)[0];
+  const until = nextB && nextB.s < endDay ? nextB.s : endDay;
+  return { min: Math.max(0, Math.floor((until - now) / MIN)), until, next: nextB && nextB.s < endDay ? label(nextB) : null, current: null };
+}
+/** Durée de la prochaine séance d'une tâche (minutes). */
+const needOf = (t) => Math.max(5, Math.min(remainingOf(t) || t.estimate || 60, sessionOf(t)));
+
+export function nowCandidates(e = energyNow(), free = freeNow()) {
   const now = new Date(), end = addDays(startOfDay(now), 1);
   const an = analyze();
+  const inSlot = (t) => t.start && !t.allDay && tStart(t) <= now && tEnd(t) > now;
   return tasks().filter((t) => t.status !== 'done' && !t.delegate && !isLaterSession(t) && !needsDecision(t) && !isDeferred(t) && !['plustard', 'reporter'].includes(t.decision?.key)
-    && (!t.start || (tStart(t) < end && (!t.allDay || tStart(t) <= now))))
+    && (!t.start || (tStart(t) < end && (!t.allDay || tStart(t) <= now)))
+    // Temps réel : seulement ce qui tient avant le prochain engagement (sauf la tâche prévue maintenant)
+    && (inSlot(t) || needOf(t) <= free.min))
     .map((t) => {
       let s = score(t) * 2;
       if (t.start && !t.allDay && tStart(t) <= now && tEnd(t) > now) s += 100;          // prévue maintenant
@@ -217,9 +239,25 @@ function incomingHtml() {
       <div class="sh-motif" hidden><input type="text" placeholder="Motif du refus (obligatoire)"><button class="btn sm" data-sh-refuse-ok="${esc(s.id)}">Envoyer</button></div></li>`).join('')}</ul></section>`;
 }
 
+/** Bandeau « temps disponible » : jusqu'au prochain engagement. */
+function freeHtml(free) {
+  if (free.current) return `<span class="free-now busy">${icon('repeat', 14)} En cours jusqu’à ${fmt.time.format(free.until)}</span>`;
+  return `<span class="free-now ${free.min < 15 ? 'short' : ''}">${icon('repeat', 14)} ${fmtDuration(free.min)} disponibles${free.next ? ` avant « ${esc(free.next.length > 40 ? free.next.slice(0, 39) + '…' : free.next)} » à ${fmt.time.format(free.until)}` : ` jusqu’à ${fmt.time.format(free.until)}`}</span>`;
+}
+
+let liveTimer = null;
 export function renderToday(el) {
+  // Temps réel : on recalcule chaque minute tant que « Ma journée » est affichée (sans gêner une saisie)
+  clearInterval(liveTimer);
+  liveTimer = setInterval(() => {
+    if (document.body.dataset.view !== 'journee' || !el.isConnected) { clearInterval(liveTimer); return; }
+    const a = document.activeElement;
+    if (document.querySelector('dialog[open]') || (a && a.closest('.today-view') && a.matches('input, textarea, select'))) return;
+    renderToday(el);
+  }, 60 * 1000);
   const e = energyNow();
-  const cands = nowCandidates(e);
+  const free = freeNow();
+  const cands = nowCandidates(e, free);
   if (skip >= cands.length) skip = 0;
   const t = cands[skip];
   const st = stats();
@@ -243,7 +281,7 @@ export function renderToday(el) {
       ${toDecideCount() ? `<a class="card review-banner decide-banner" href="#decision">${icon('bulb', 20)}<div><b>${toDecideCount()} tâche${toDecideCount() > 1 ? 's' : ''} à trancher</b><span>Tant qu’elles ne sont pas décidées, elles ne sont ni planifiées ni proposées.</span></div><span class="btn primary sm">Trancher</span></a>` : ''}
       ${!msConnected() && !ghConfigured() ? `<a class="card sync-banner" href="#reglages/sync">${icon('sync', 20)}<div><b>Cet appareil n’est pas synchronisé</b><span>Connectez-le une fois pour retrouver les mêmes tâches partout.</span></div><span class="btn primary sm">Connecter</span></a>` : ''}
       ${t ? `<section class="card now-card e${t.energy}">
-        <header><span class="now-tag">${icon('flame', 16)} Maintenant</span><small>${esc(whyNow(t, e))}</small></header>
+        <header><span class="now-tag">${icon('flame', 16)} Maintenant</span>${freeHtml(free)}<small>${esc(whyNow(t, e))}</small></header>
         <div class="now-main">
           ${ring(progressOf(t), 48)}
           <button class="link now-title" data-open-id="${t.id}"><b>${esc(t.title)}</b>
@@ -253,7 +291,10 @@ export function renderToday(el) {
           <button class="btn primary" data-focus="${t.id}">${icon('play', 18)} C’est parti</button>
           ${cands.length > 1 ? `<button class="btn ghost" data-skip>Autre idée</button>` : ''}
         </div>
-      </section>` : `<div class="card now-card now-empty"><p>${toDecideCount() ? 'Tranchez vos tâches : la tâche à faire maintenant sera proposée ici.' : 'Rien à faire pour l’instant. Profitez-en !'}</p></div>`}
+      </section>` : `<div class="card now-card now-empty">${freeHtml(free)}<p>${free.current ? `En cours : « ${esc(free.current)} »${free.until ? ` jusqu’à ${fmt.time.format(free.until)}` : ''}.`
+        : free.min < 10 && free.next ? `Seulement ${free.min} min avant « ${esc(free.next)} » : le temps de souffler et de vous préparer.`
+        : toDecideCount() ? 'Tranchez vos tâches : la tâche à faire maintenant sera proposée ici.'
+        : free.min < 5 ? 'Journée terminée. Bonne soirée !' : `Aucune tâche ne tient dans les ${fmtDuration(free.min)} disponibles. Une pause, ou un petit rangement ?`}</p></div>`}
 
       ${blocksHtml()}
       <section class="card day-card">
