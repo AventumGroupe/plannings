@@ -28,7 +28,8 @@ export function energyNow() {
 }
 const setEnergyNow = (v) => local.set('energyNow', { date: todayStr(), v });
 
-const isLaterSession = (t) => /\(séance (?:[2-9]|\d{2,})\/\d+\)$/.test(t.title);
+// Une tâche fractionnée n'est jamais proposée elle-même : ce sont ses séances, chacune sur son jour.
+const isLaterSession = (t) => !!t.sessions?.length;
 
 /** Tâches classées pour « maintenant » selon l'énergie du moment. */
 /**
@@ -187,6 +188,7 @@ function timelineHtml() {
     }
     const t = b.t, cur = b.s <= now && b.e > now;
     return `<div class="tl-card tl-task e${t.energy} ${t.status === 'done' ? 'done' : ''} ${cur ? 'cur' : ''}">
+      <button class="chk ${t.status === 'done' ? 'on' : ''}" data-jdone="${t.id}" aria-label="Terminée">${t.status === 'done' ? icon('check', 14) : ''}</button>
       <button class="tl-main" data-open-id="${t.id}">${own}<b>${t.status === 'done' ? '✓ ' : ''}${esc(t.title)}</b><small>${esc(ENERGY[t.energy].label)} · ${esc(catInfo(category(t)).label)}</small></button>
       ${t.status !== 'done' ? `<button class="icon-btn xs" data-focus="${t.id}" title="Lancer le minuteur" aria-label="Lancer le minuteur">${icon('play', 16)}</button>` : ''}</div>`;
   };
@@ -220,12 +222,16 @@ function jrow(t, { place = false } = {}) {
 function blocksHtml() {
   const today = todayStr();
   const open = tasks().filter((t) => t.status !== 'done' && !t.delegate && !isDeferred(t));
-  const urgent = open.filter((t) => effUrgency(t) >= 5 || (t.due && t.due <= today) || quickWin(t) || (t.start && t.start.slice(0, 10) < today && !t.allDay))
+  const dayOf = open.filter((t) => t.allDay && t.start && t.start.slice(0, 10) <= today && (t.end || t.start).slice(0, 10) >= today && !t.sessions?.length && !needsDecision(t))
+    .sort((a, b) => score(b) - score(a));
+  const dayIds = new Set(dayOf.map((t) => t.id));
+  const urgent = open.filter((t) => !dayIds.has(t.id) && !t.sessions?.length && (effUrgency(t) >= 5 || (t.due && t.due <= today) || quickWin(t) || (t.start && t.start.slice(0, 10) < today && !t.allDay)))
     .sort((a, b) => score(b) - score(a)).slice(0, 8);
   const ids = new Set(urgent.map((t) => t.id));
-  const unplanned = open.filter((t) => !t.start && !ids.has(t.id) && !needsDecision(t) && ['prioriser', 'planifier', 'expedier', 'decouper', 'regrouper'].includes(t.decision?.key))
+  const unplanned = open.filter((t) => !t.start && !ids.has(t.id) && !t.sessions?.length && !needsDecision(t) && ['prioriser', 'planifier', 'expedier', 'decouper', 'regrouper'].includes(t.decision?.key))
     .sort((a, b) => score(b) - score(a)).slice(0, 10);
-  return `${urgent.length ? `<section class="card jr-block urgent"><header><h3>${icon('alert', 18)} Urgent aujourd’hui</h3><span class="count">${urgent.length}</span>${info('', 'Échéance aujourd’hui ou dépassée, urgence maximale (y compris relevée par l’échéance), ou tâche urgente de moins de 15 minutes.')}</header><ul>${urgent.map((t) => jrow(t, { place: !t.start })).join('')}</ul></section>` : ''}
+  return `${dayOf.length ? `<section class="card jr-block today-block"><header><h3>${icon('today', 18)} Aujourd’hui, à arbitrer</h3><span class="count">${dayOf.length}</span>${info('', 'Les tâches posées sur la journée sans heure précise, dont les séances des tâches fractionnées. À vous de choisir l’ordre ; « Maintenant » propose celle qui tient dans le temps libre.')}</header><ul>${dayOf.map((t) => jrow(t)).join('')}</ul></section>` : ''}
+    ${urgent.length ? `<section class="card jr-block urgent"><header><h3>${icon('alert', 18)} Urgent aujourd’hui</h3><span class="count">${urgent.length}</span>${info('', 'Échéance aujourd’hui ou dépassée, urgence maximale (y compris relevée par l’échéance), ou tâche urgente de moins de 15 minutes.')}</header><ul>${urgent.map((t) => jrow(t, { place: !t.start })).join('')}</ul></section>` : ''}
     ${unplanned.length ? `<section class="card jr-block"><header><h3>${icon('calendar', 18)} Décidées, pas encore planifiées</h3><span class="count">${unplanned.length}</span><span class="spacer"></span><button class="btn sm" data-propose>${icon('bulb', 14)} Proposer ma journée</button></header><ul>${unplanned.map((t) => jrow(t, { place: true })).join('')}</ul></section>` : ''}`;
 }
 
@@ -289,6 +295,7 @@ export function renderToday(el) {
         </div>
         <div class="now-acts">
           <button class="btn primary" data-focus="${t.id}">${icon('play', 18)} C’est parti</button>
+          <button class="btn ghost" data-jdone="${t.id}">${icon('check', 18)} Terminé</button>
           ${cands.length > 1 ? `<button class="btn ghost" data-skip>Autre idée</button>` : ''}
         </div>
       </section>` : `<div class="card now-card now-empty">${freeHtml(free)}<p>${free.current ? `En cours : « ${esc(free.current)} »${free.until ? ` jusqu’à ${fmt.time.format(free.until)}` : ''}.`

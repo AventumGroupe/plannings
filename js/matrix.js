@@ -25,11 +25,11 @@ const QUADS = [
 
 function card(t) {
   const dec = t.decision?.key;
-  return `<button data-drag-ok class="mx-card e${t.energy} ${t.status === 'done' ? 'done' : ''}" data-mx-task="${t.id}" style="--pr:${Math.round(progressOf(t) * 100)}%">
-    <b>${esc(t.title)}</b>
+  return `<div role="button" tabindex="0" data-drag-ok class="mx-card e${t.energy} ${t.status === 'done' ? 'done' : ''}" data-mx-task="${t.id}" style="--pr:${Math.round(progressOf(t) * 100)}%">
+    <span class="mx-card-top"><button class="chk sm ${t.status === 'done' ? 'on' : ''}" data-done-task="${t.id}" title="Terminée" aria-label="Terminée">${t.status === 'done' ? icon('check', 12) : ''}</button><b>${esc(t.title)}</b></span>
     <span class="mx-card-meta">${scoreBadges(t, sc)}${needsDecision(t) ? '<span class="badge warn">à trancher</span>' : dec ? `<span class="badge muted">${esc(DECISIONS[dec]?.label || '')}</span>` : ''}${t.delegate ? '<span class="badge accent">confiée</span>' : ''}</span>
     <i class="mx-prog"></i>
-  </button>`;
+  </div>`;
 }
 
 function cellHtml(q, key, high, list) {

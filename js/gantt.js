@@ -152,7 +152,7 @@ function ganttHtml(rows, an, from, to, { dayW, nameW, print = false }) {
     const p = db.projects[t.projectId];
     const del = t.delegate && db.resources[t.delegate];
     names.push(`<div class="g-name ${t.status === 'done' ? 'done' : ''} ${a.late ? 'late' : ''}" style="top:${y}px" data-open-task="${t.id}" title="${esc(t.title)}">
-      <i class="edot e${t.energy}"></i><span class="nm">${esc(t.title)}</span>
+      <button class="chk sm ${t.status === 'done' ? 'on' : ''}" data-done-task="${t.id}" title="Terminée" aria-label="Terminée">${t.status === 'done' ? icon('check', 12) : ''}</button><i class="edot e${t.energy}"></i><span class="nm">${esc(t.title)}</span>
       ${r.type === 'unplanned' ? '<small class="muted">non planifiée</small>' : del ? `<small>${esc(del.name)}</small>` : ''}<small class="g-pct">${Math.round(progressOf(t) * 100)} %</small></div>`);
     if (r.type === 'unplanned') {
       if (!print) bars.push(`<div class="g-plan-row" style="top:${y}px;height:${ROW}px" data-plan-row="${t.id}" title="Cliquez sur un jour pour planifier « ${esc(t.title)} »"></div>`);
@@ -239,7 +239,7 @@ function compactHtml(gs, an) {
           const preds = t.preds.map((x) => db.tasks[x.id]?.title).filter(Boolean);
           const del = t.delegate && db.resources[t.delegate];
           return `<li class="cg-task ${a.late ? 'late' : ''} ${G.critical && a.critical && !a.late ? 'critical' : ''} ${t.status === 'done' ? 'done' : ''}" data-open-task="${t.id}">
-            <div class="cg-top"><i class="edot e${t.energy}"></i><b>${esc(t.title)}</b>
+            <div class="cg-top"><button class="chk sm ${t.status === 'done' ? 'on' : ''}" data-done-task="${t.id}" title="Terminée" aria-label="Terminée">${t.status === 'done' ? icon('check', 12) : ''}</button><i class="edot e${t.energy}"></i><b>${esc(t.title)}</b>
               <span class="cg-dates">${fmt.dateShort.format(ts)}${sameDay(ts, new Date(te - 1)) ? '' : ` → ${fmt.dateShort.format(new Date(te - 1))}`}</span></div>
             <div class="cg-track"><i class="cg-bar" style="left:${pct(ts)}%;width:${Math.max(2, pct(te) - pct(ts))}%;--pc:${g.p?.color || 'var(--accent)'}"><b style="width:${progressOf(t) * 100}%"></b></i>
               ${s && today >= s && today <= e ? `<i class="cg-now" style="left:${pct(today)}%"></i>` : ''}</div>

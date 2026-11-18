@@ -209,7 +209,7 @@ function gridHtml(an) {
       const p = db.projects[t.projectId];
       return `<div class="ev task e${t.energy} ${t.status === 'done' ? 'done' : ''} ${a.late ? 'late' : ''} ${clipped ? 'clipped' : ''}" style="${style};--pc:${p?.color || 'transparent'}"
           data-drag-task="${t.id}" data-open-task="${t.id}" title="${esc(t.title)} · ${time} · ${ENERGY[t.energy].label}">
-          <b>${t.status === 'done' ? '✓ ' : ''}${esc(t.title)}</b><small>${time}</small>
+          <button class="chk sm ${t.status === 'done' ? 'on' : ''}" data-done-task="${t.id}" title="Terminée" aria-label="Terminée">${t.status === 'done' ? icon('check', 12) : ''}</button><b>${t.status === 'done' ? '✓ ' : ''}${esc(t.title)}</b><small>${time}</small>
           <span class="rs" data-resize aria-hidden="true"></span></div>`;
     }).join('');
     const isToday = sameDay(d, today);
@@ -247,7 +247,7 @@ function chipHtml(it, an) {
   const p = db.projects[t.projectId];
   const time = t.allDay ? '' : `<small>${fmt.time.format(it.s)}</small> `;
   return `<div class="chip-ev e${t.energy} ${t.status === 'done' ? 'done' : ''} ${a.late ? 'late' : ''}" style="--pc:${p?.color || 'transparent'}"
-    data-drag-task="${t.id}" data-open-task="${t.id}" title="${esc(t.title)}">${time}${esc(t.title)}</div>`;
+    data-drag-task="${t.id}" data-open-task="${t.id}" title="${esc(t.title)}"><button class="chk sm ${t.status === 'done' ? 'on' : ''}" data-done-task="${t.id}" title="Terminée" aria-label="Terminée">${t.status === 'done' ? icon('check', 12) : ''}</button>${time}${esc(t.title)}</div>`;
 }
 
 function monthHtml(an) {

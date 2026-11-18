@@ -5,9 +5,9 @@
 
 import {
   db, tasks, putTask, save, people, projects, ENERGY, MOTIVATION, LEVELS, catInfo, category, isLeader,
-  uiScore, emScore, effUrgency, quickWin, DECISIONS, decisionsFor, needsDecision, decide, abandonTask,
+  uiScore, emScore, effUrgency, quickWin, DECISIONS, decisionsFor, needsDecision, decide, abandonTask, CHOICES, choiceKey, adviceKey,
 } from './store.js';
-import { proposeSlot, setSpan, propagate } from './sched.js';
+import { proposeSlot, setSpan, propagate, splitTask, completeTask } from './sched.js';
 import { delegateTo } from './delegation.js';
 import { absenceOf } from './rh.js';
 import { openTaskEditor } from './editor.js';
@@ -53,13 +53,34 @@ function extraHtml(t, key) {
   if (key === 'reporter') return `<label class="field"><span>À revoir le</span><input type="date" data-x="date" value="${toDateStr(addWorkDays(new Date(), 10))}"></label><p class="hint">La tâche disparaît jusqu’à cette date, puis revient ici.</p>`;
   if (key === 'abandon') return `<label class="field"><span>Pourquoi ? (pour le bilan)</span><input type="text" data-x="reason" placeholder="Plus d’actualité, pas prioritaire…"></label><p class="hint">La tâche est supprimée ; elle reste dans le journal des renoncements.</p>`;
   if (key === 'negocier') return `<label class="field"><span>Échéance à proposer</span><input type="date" data-x="date" value="${t.due ? toDateStr(addWorkDays(new Date(t.due + 'T00:00'), 5)) : toDateStr(addWorkDays(new Date(), 10))}"></label><p class="hint">${isLeader() ? 'À négocier avec le donneur d’ordre.' : 'À négocier avec votre manager ou votre dirigeant.'} La nouvelle échéance est notée ; la tâche reste à planifier.</p>`;
-  if (key === 'decouper') return `<label class="field"><span>Les étapes (une par ligne)</span><textarea data-x="steps" rows="4" placeholder="Rassembler les éléments\nRédiger le plan\n…"></textarea></label><p class="hint">Chaque étape devient une sous-tâche ; la première sera votre « premier pas ».</p>`;
+  if (key === 'decouper') return `<div class="dc-split">
+      <label class="field"><span>Nombre de séances</span><input type="number" data-x="n" min="2" max="20" value="3"></label>
+      <label class="field"><span>Espacées de</span><span class="row gap-sm"><input type="number" data-x="every" min="1" max="10" value="1" style="width:70px"><select data-x="unit"><option value="demi">demi-journée(s)</option><option value="jour" selected>jour(s)</option><option value="semaine">semaine(s)</option></select></span></label>
+      <label class="field"><span>À partir du</span><input type="date" data-x="from" value="${toDateStr(new Date())}"></label>
+    </div><p class="hint" data-split-preview>${splitPreview(t, 3, 1, 'jour', toDateStr(new Date()))}</p>`;
   if (key === 'aide') return `<label class="field"><span>Qui pourrait aider ?</span><input type="text" data-x="note" placeholder="${isLeader() ? 'Collègue, freelance, prestataire…' : 'Collègue, manager…'}"></label>`;
   if (key === 'refuser') return `<label class="field"><span>À qui la renvoyer ? (facultatif)</span><input type="text" data-x="note" placeholder="Demandeur"></label><p class="hint">La tâche est retirée et notée dans le journal des renoncements.</p>`;
   if (key === 'manager' || key === 'valider') return `<label class="field"><span>Note pour l’échange (facultatif)</span><input type="text" data-x="note" placeholder="Ce que je propose…"></label>`;
   return '';
 }
 const NEEDS_EXTRA = ['deleguer', 'reporter', 'abandon', 'negocier', 'decouper', 'aide', 'refuser'];
+
+/** Aperçu du fractionnement : « 3 séances de 30 min : mer. 18, jeu. 19, ven. 20 ». */
+function splitPreview(t, n, every, unit, from) {
+  n = Math.max(2, Math.min(20, Number(n) || 2)); every = Math.max(1, Number(every) || 1);
+  const total = t.estimate || 60, each = Math.max(5, Math.round(total / n / 5) * 5);
+  const wd = db.settings.workDays, isWork = (d) => wd.includes(d.getDay());
+  let d = new Date((from || toDateStr(new Date())) + 'T00:00'); while (!isWork(d)) d = addDays(d, 1);
+  let half = 0; const out = [];
+  for (let k = 0; k < Math.min(n, 6); k++) {
+    out.push(fmt.dayShort.format(d) + (unit === 'demi' ? (half ? ' ap.-midi' : ' matin') : ''));
+    if (unit === 'demi') { for (let i = 0; i < every; i++) { half = 1 - half; if (!half) { d = addDays(d, 1); while (!isWork(d)) d = addDays(d, 1); } } }
+    else if (unit === 'semaine') { d = addDays(d, 7 * every); while (!isWork(d)) d = addDays(d, 1); }
+    else { for (let i = 0; i < every; i++) { d = addDays(d, 1); while (!isWork(d)) d = addDays(d, 1); } }
+  }
+  return `${n} séances de ${fmtMin(each)} (${fmtMin(total)} au total) : ${out.join(', ')}${n > 6 ? '…' : ''}${/\.$/.test(out[out.length - 1] || '') && n <= 6 ? '' : '.'} Chaque matin, vous arbitrez dans « Ma journée ».`;
+}
+const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ' ' + String(m % 60).padStart(2, '0') : ''}` : `${m} min`);
 
 /** Applique une décision. Retourne un message. */
 export function applyDecision(t, key, x = {}) {
@@ -79,10 +100,8 @@ export function applyDecision(t, key, x = {}) {
   if (key === 'reporter') { decide(t, 'reporter', { reviewAt: x.date || toDateStr(addWorkDays(new Date(), 10)) }); return `Reportée : elle reviendra le ${fmt.dateShort.format(new Date((x.date || toDateStr(addWorkDays(new Date(), 10))) + 'T00:00'))}.`; }
   if (key === 'negocier') { if (x.date) t.due = x.date; decide(t, 'negocier', { proposedDue: x.date || null }); return 'Échéance à négocier : notée.'; }
   if (key === 'decouper') {
-    const steps = String(x.steps || '').split('\n').map((s) => s.trim()).filter(Boolean);
-    t.subtasks = [...(t.subtasks || []), ...steps.map((title) => ({ id: uid(), title, done: false, spent: 0 }))];
-    decide(t, 'decouper');
-    return steps.length ? `${steps.length} étape(s) créée(s).` : 'Découpage noté : ajoutez les étapes dans la fiche.';
+    const { ids, each } = splitTask(t, { n: Number(x.n) || 3, every: Number(x.every) || 1, unit: x.unit || 'jour', from: x.from ? new Date(x.from + 'T00:00') : new Date() });
+    return `Fractionnée en ${ids.length} séances de ${fmtMin(each)}, posées sur leurs jours.`;
   }
   if (key === 'planifier' || key === 'prioriser') {
     decide(t, key);
@@ -101,10 +120,9 @@ export function applyDecision(t, key, x = {}) {
 }
 
 function cardHtml(t, pos, total) {
-  const c = category(t), ci = catInfo(c), recos = decisionsFor(t);
-  const main = recos[0];
-  const others = Object.keys(DECISIONS).filter((k) => k !== main && (!DECISIONS[k].leader || isLeader()) && (!DECISIONS[k].collab || !isLeader()));
-  const alt = [...recos.slice(1), ...others.filter((k) => !recos.includes(k))];
+  const c = category(t), ci = catInfo(c);
+  const reco = adviceKey(t);
+  const others = decisionsFor(t).map(choiceKey).filter((k, i, a) => k !== reco && a.indexOf(k) === i).slice(0, 2);
   const ui = uiScore(t), em = emScore(t), up = effUrgency(t) > t.urgency;
   const p = t.projectId && db.projects[t.projectId];
   return `<article class="dc-card c-${c}" data-dc="${t.id}">
@@ -113,10 +131,11 @@ function cardHtml(t, pos, total) {
       ${t.decision?.key === 'reporter' ? '<span class="badge warn">Revenue de « Reporter »</span>' : ''}
       ${(t.slips || 0) >= 3 ? `<span class="badge danger">Repoussée ${t.slips} fois</span>` : ''}
       <span class="spacer"></span>
+      <label class="dc-done"><input type="checkbox" data-dc-done> Déjà faite</label>
       <button class="icon-btn" data-dc-open title="Ouvrir la fiche" aria-label="Ouvrir la fiche">${icon('pdf', 18)}</button>
     </header>
     <input class="dc-title" data-dc-title value="${esc(t.title)}" aria-label="Titre">
-    <div class="dc-meta">${p ? `<span class="chip project" style="--pc:${esc(p.color)}"><i></i>${esc(p.name)}</span>` : ''}${t.due ? `<span class="chip">Échéance ${fmt.dateShort.format(new Date(t.due + 'T00:00'))}</span>` : ''}<span class="chip">${icon('repeat', 13)} ${t.estimate || 60} min</span></div>
+    <div class="dc-meta">${p ? `<span class="chip project" style="--pc:${esc(p.color)}"><i></i>${esc(p.name)}</span>` : ''}${t.due ? `<span class="chip">Échéance ${fmt.dateShort.format(new Date(t.due + 'T00:00'))}</span>` : ''}<span class="chip">${icon('repeat', 13)} ${fmtMin(t.estimate || 60)}</span></div>
     <div class="dc-crit">
       ${slider('urgency', { label: 'Urgence', ...LV, value: t.urgency, kind: 'heat' })}
       ${slider('importance', { label: 'Importance', ...LV, value: t.importance, kind: 'heat' })}
@@ -124,16 +143,14 @@ function cardHtml(t, pos, total) {
       ${t.motivation ? slider('motivation', { label: 'Ma motivation', ...MO, value: t.motivation, kind: 'energy', infoKey: 'motivation' })
         : `<div class="dc-moti"><span>Ma motivation ${info('motivation')}</span><div class="dc-moti-btns">${[1, 2, 3, 4].map((v) => `<button type="button" class="btn" data-moti="${v}"><b>${v}</b><small>${esc(MOTIVATION[v].short)}</small></button>`).join('')}</div></div>`}
     </div>
-    <div class="dc-scores">
-      ${gauge(ui, 25, 12, 'Eisenhower', `Urgence ${effUrgency(t)}${up ? ' (relevée par l’échéance)' : ''} × importance ${t.importance}`)}
-      ${t.motivation ? gauge(em, 16, 9, 'Énergie × motivation', `Énergie ${t.energy} × motivation ${t.motivation}`) : '<div class="dc-gauge wait"><b>?</b><span>Notez votre motivation</span></div>'}
-    </div>
     ${t.motivation ? `
-    <div class="dc-situ c-${c}"><i class="grp-dot"></i><div><b>${esc(ci.label)}</b><span>${esc(ci.hint)}</span>${quickWin(t) ? '<span class="dc-quick">Urgente et courte (≤ 15 min) : faites-la tout de suite.</span>' : ''}</div></div>
-    <div class="dc-actions">
-      <button class="btn primary big dc-main" data-dec="${main}">${icon(DECISIONS[main].icon, 18)} ${esc(DECISIONS[main].label)}</button>
-      <div class="dc-alt">${alt.map((k) => `<button class="chip dc-chip ${recos.includes(k) ? 'reco' : ''}" data-dec="${k}">${esc(DECISIONS[k].label)}</button>`).join('')}</div>
+    <div class="dc-advice c-${c}">
+      <span class="dc-sc" title="Eisenhower : urgence ${effUrgency(t)}${up ? ' (relevée par l’échéance)' : ''} × importance ${t.importance}"><b>${ui}</b>/25</span>
+      <span class="dc-sc" title="Énergie ${t.energy} × motivation ${t.motivation}"><b>${em}</b>/16</span>
+      <span class="dc-adv-txt"><b>Conseil : ${esc(DECISIONS[reco].label)}</b>${others.length ? ` <small>(ou ${others.map((k) => esc(DECISIONS[k].label.toLowerCase())).join(', ')})</small>` : ''}<small>${esc(ci.hint)}${quickWin(t) ? ' Urgente et courte : à faire tout de suite.' : ''}</small></span>
     </div>
+    <h4 class="dc-choose">Votre décision</h4>
+    <div class="dc-grid">${CHOICES.map((k) => `<button class="dc-chip ${k === reco ? 'reco dc-main' : ''}" data-dec="${k}">${icon(DECISIONS[k].icon, 16)}<span>${esc(DECISIONS[k].label)}</span>${k === reco ? '<em>conseillé</em>' : ''}</button>`).join('')}</div>
     ${pick ? `<div class="dc-extra"><h4>${esc(DECISIONS[pick].label)}</h4>${extraHtml(t, pick)}<div class="row gap-sm"><button class="btn primary" data-dec-ok>Valider</button><button class="btn ghost" data-dec-cancel>Annuler</button></div></div>` : ''}` : ''}
     <footer class="dc-foot"><button class="btn ghost sm" data-dc-skip>Passer pour l’instant</button></footer>
   </article>`;
@@ -158,9 +175,16 @@ function bind(el, t) {
     if (!final) return;
     if (['urgency', 'importance', 'energy', 'motivation'].includes(name)) { t[name] = v; putTask(t, { silent: true }); save('decision-crit'); pick = null; rerender(); }
   });
+  root.addEventListener('input', (e) => {
+    if (!e.target.closest('.dc-split')) return;
+    const v = (k) => root.querySelector(`[data-x="${k}"]`)?.value;
+    const pv = root.querySelector('[data-split-preview]'); if (pv) pv.innerHTML = splitPreview(t, v('n'), v('every'), v('unit'), v('from'));
+  });
+  root.addEventListener('change', (e) => { if (e.target.closest('.dc-split')) e.target.dispatchEvent(new Event('input', { bubbles: true })); });
   root.querySelector('[data-dc-title]')?.addEventListener('change', (e) => { const v = e.target.value.trim(); if (v) { t.title = v; putTask(t); } });
   root.addEventListener('click', (e) => {
     const q = (s) => e.target.closest(s);
+    if (q('[data-dc-done]')) { completeTask(t); save('decision-done'); done('Bravo, c’est fait : elle ne sera plus proposée.'); return; }
     const m = q('[data-moti]'); if (m) { t.motivation = Number(m.dataset.moti); putTask(t, { silent: true }); save('decision-crit'); rerender(); return; }
     if (q('[data-dc-open]')) { openTaskEditor(t.id); return; }
     if (q('[data-dc-skip]')) { order = order.filter((id) => id !== t.id).concat(t.id); pick = null; rerender(); return; }

@@ -22,7 +22,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '3.2.1';
+const VERSION = '3.3.0';
 const TABS = [
   { id: 'journee', label: 'Journée', icon: 'today', render: renderToday, main: true },
   { id: 'decision', label: 'Décision', icon: 'bulb', render: renderDecision, main: true },
@@ -95,6 +95,14 @@ function shell() {
     <main id="view" tabindex="-1"></main>
     <nav class="bottom-nav" aria-label="Navigation">${bottom}</nav>${moreMenu}
     <button class="fab" data-add aria-label="Nouvelle tâche">${icon('plus', 26)}</button>`;
+  // Case « terminée » commune à tous les onglets (interceptée avant l'ouverture de la fiche)
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-done-task]');
+    if (!b) return;
+    e.stopPropagation(); e.preventDefault();
+    const t = db.tasks[b.dataset.doneTask];
+    if (t) import('./list.js').then((m) => m.toggleDone(t));
+  }, true);
   document.body.addEventListener('click', (e) => {
     if (e.target.closest('[data-add]')) openTaskEditor();
     const mm = document.querySelector('[data-more-menu]');

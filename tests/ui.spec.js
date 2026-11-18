@@ -19,6 +19,7 @@ test('chaque onglet s’affiche sans erreur (avec les données d’exemple)', as
 test('créer une tâche avec un nouveau projet, puis la trancher', async ({ page }) => {
   await openApp(page, { hash: '#decision' });
   await page.locator('.fab').click();
+  await expect(page.locator('.sheet [data-f="title"]')).toBeFocused(); // la fiche place le curseur dans le titre
   await page.locator('.sheet [data-f="title"]').fill('Préparer le comité de pilotage');
   await page.locator('.sheet [data-f="projectName"]').fill('Comité 2027');
   await page.click('.sheet [data-act="save"]');
@@ -39,7 +40,7 @@ test('Décision : noter la motivation, déléguer à une personne', async ({ pag
   });
   await page.goto('/#decision');
   await page.click('[data-moti="2"]');
-  await expect(page.locator('.dc-situ')).toContainText('Déléguer');
+  await expect(page.locator('.dc-advice')).toContainText('Conseil : Déléguer');
   await page.click('.dc-main');
   await page.click('[data-dec-ok]');
   const r = await run(page, ({ store }) => { const t = store.tasks()[0]; return { d: t.decision.key, who: store.db.resources[t.delegate]?.name, m: t.motivation }; });
@@ -134,4 +135,48 @@ test('Gantt : « Nouveau projet » propose projet vide ou modèle', async ({ pag
   await expect(page.locator('.np-choice')).toHaveCount(2);
   await page.click('[data-np="tpl"]');
   await expect(page.locator('.tpl-item')).toHaveCount(1);
+});
+
+test('Décision : le salarié a tous les choix, et peut fractionner (3 séances, 1 jour d’écart)', async ({ page }) => {
+  await openApp(page);
+  await run(page, ({ store }) => {
+    store.setSettings({ role: 'collaborateur' });
+    store.putTask(store.newTask({ title: 'Rédiger le programme', urgency: 3, importance: 5, energy: 2, motivation: 2, estimate: 90 }));
+  });
+  await page.goto('/#decision');
+  await expect(page.locator('.dc-grid .dc-chip')).toHaveCount(11);
+  await expect(page.locator('.dc-grid [data-dec="deleguer"]')).toBeVisible();
+  await page.click('.dc-grid [data-dec="decouper"]');
+  await page.fill('[data-x="n"]', '3');
+  await page.fill('[data-x="from"]', '2026-11-10');
+  await expect(page.locator('[data-split-preview]')).toContainText('3 séances de 30 min');
+  await page.click('[data-dec-ok]');
+  const r = await run(page, ({ store }) => store.tasks().filter((t) => t.parentId).map((t) => `${t.start.slice(0, 10)} ${t.estimate}`).sort());
+  expect(r).toEqual(['2026-11-10 30', '2026-11-11 30', '2026-11-12 30']);
+  // séance du jour : dans « Aujourd'hui, à arbitrer » ; les cocher toutes termine la tâche d'origine
+  await page.goto('/#journee');
+  await expect(page.locator('.today-block')).toContainText('séance 1/3');
+  const done = await run(page, async ({ store }) => {
+    const l = await import('./js/list.js');
+    store.tasks().filter((t) => t.parentId).forEach((t) => l.toggleDone(t));
+    return store.tasks().find((t) => t.sessions)?.status;
+  });
+  expect(done).toBe('done');
+});
+
+test('case « terminée » : depuis la Décision et la Matrice ; plus jamais reproposée', async ({ page }) => {
+  await openApp(page);
+  await run(page, ({ store }) => {
+    store.putTask(store.newTask({ title: 'Déjà réglé', motivation: 3 }));
+    store.putTask(store.newTask({ title: 'Appel fournisseur', urgency: 5, importance: 5, energy: 4, motivation: 4, estimate: 10, decision: { key: 'prioriser', at: Date.now() } }));
+  });
+  await page.goto('/#decision');
+  await page.click('[data-dc-done]');
+  await expect(page.locator('.dc-empty')).toBeVisible();
+  await page.goto('/#matrice');
+  await page.locator('.mx-card', { hasText: 'Appel fournisseur' }).locator('[data-done-task]').click();
+  await page.goto('/#journee');
+  await expect(page.locator('.now-card .now-title')).toHaveCount(0);
+  const r = await run(page, ({ store }) => store.tasks().map((t) => t.status));
+  expect(r).toEqual(['done', 'done']);
 });

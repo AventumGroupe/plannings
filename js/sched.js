@@ -323,9 +323,47 @@ export function nextOccurrence(t) {
 }
 
 /** Termine la tâche ; si elle est récurrente, crée l'occurrence suivante (retournée). */
+/**
+ * Fractionne une tâche en n séances espacées (demi-journée, jour ouvré ou semaine), à partir d'une date.
+ * Chaque séance est posée sur son jour, sans heure imposée (arbitrage le matin) ; la durée est répartie.
+ * La tâche d'origine devient le « parent » : elle est terminée quand toutes ses séances le sont.
+ */
+export function splitTask(t, { n = 3, every = 1, unit = 'jour', from = new Date() } = {}) {
+  n = Math.max(2, Math.min(20, Math.round(n))); every = Math.max(1, Math.round(every));
+  const total = Math.max(0, (t.estimate || 60) - (t.subtasks || []).reduce((m, x) => m + (Number(x.spent) || 0), 0)) || t.estimate || 60;
+  const each = Math.max(5, Math.round(total / n / 5) * 5);
+  const isWork = (d) => db.settings.workDays.includes(d.getDay());
+  let d = startOfDay(from); while (!isWork(d)) d = addDays(d, 1);
+  let half = 0; // 0 = matin, 1 = après-midi (pour l'espacement en demi-journées)
+  const ids = [];
+  for (let k = 1; k <= n; k++) {
+    const s = newTask({
+      title: `${t.title} (séance ${k}/${n}${unit === 'demi' ? (half ? ', après-midi' : ', matin') : ''})`,
+      urgency: t.urgency, importance: t.importance, energy: t.energy, motivation: t.motivation, projectId: t.projectId,
+      due: t.due, estimate: each, allDay: true, start: toDateStr(d) + 'T00:00', end: toDateStr(d) + 'T00:00',
+      decision: { key: 'planifier', at: Date.now() }, parentId: t.id, notes: t.notes || '',
+    });
+    putTask(s, { silent: true }); ids.push(s.id);
+    // séance suivante
+    if (unit === 'demi') { for (let i = 0; i < every; i++) { half = 1 - half; if (half === 0) { d = addDays(d, 1); while (!isWork(d)) d = addDays(d, 1); } } }
+    else if (unit === 'semaine') { d = addDays(d, 7 * every); while (!isWork(d)) d = addDays(d, 1); }
+    else { for (let i = 0; i < every; i++) { d = addDays(d, 1); while (!isWork(d)) d = addDays(d, 1); } }
+  }
+  t.sessions = ids; t.decision = { key: 'decouper', at: Date.now(), n, every, unit };
+  t.start = null; t.end = null;
+  putTask(t, { silent: true });
+  save('split');
+  return { ids, each };
+}
+
 export function completeTask(t) {
   t.status = 'done';
   t.doneAt = Date.now();
+  // Dernière séance d'une tâche fractionnée : la tâche d'origine est terminée aussi
+  if (t.parentId && db.tasks[t.parentId]) {
+    const p = db.tasks[t.parentId];
+    if (p.status !== 'done' && (p.sessions || []).every((id) => id === t.id || !db.tasks[id] || db.tasks[id].status === 'done')) { p.status = 'done'; p.doneAt = Date.now(); putTask(p, { silent: true }); }
+  }
   let next = null;
   if (t.recur?.freq && !t.recurSpawned) {
     const n = nextOccurrence(t);

@@ -3,7 +3,7 @@
 
 import {
   db, tasks, projects, putTask, removeTask, save, local, score, uiScore, emScore, effUrgency, category, catInfo,
-  DECISIONS, needsDecision, isDeferred, abandons, spentOf, progressOf, ENERGY,
+  DECISIONS, CHOICES, needsDecision, isDeferred, abandons, spentOf, progressOf, ENERGY,
 } from './store.js';
 import { completeTask, propagate, analyze } from './sched.js';
 import { openTaskEditor } from './editor.js';
@@ -114,7 +114,7 @@ function decisionMenu(t, anchor) {
   const { el, close } = openDialog({
     title: 'Décision',
     body: `<p class="muted">« ${esc(t.title)} » — ${esc(catInfo(category(t)).label)}</p>
-      <div class="dec-menu">${Object.keys(DECISIONS).filter((k) => !['abandon', 'refuser', 'deleguer', 'reporter', 'negocier', 'decouper'].includes(k)).map((k) => `<button class="chip ${t.decision?.key === k ? 'on' : ''}" data-k="${k}">${esc(DECISIONS[k].label)}</button>`).join('')}</div>
+      <div class="dec-menu">${CHOICES.filter((k) => !['abandon', 'deleguer', 'reporter', 'negocier', 'decouper'].includes(k)).map((k) => `<button class="chip ${t.decision?.key === k ? 'on' : ''}" data-k="${k}">${esc(DECISIONS[k].label)}</button>`).join('')}</div>
       <button class="btn" data-back>${icon('bulb', 16)} Trancher de nouveau (onglet Décision)</button>`,
   });
   el.addEventListener('click', (e) => {

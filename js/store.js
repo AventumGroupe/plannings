@@ -37,7 +37,7 @@ export const CATEGORIES = {
   prioriser: { label: 'Prioriser', hint: 'Urgente, importante, et vous avez l’énergie et l’envie : à faire maintenant.', short: 'Prioriser' },
   urg_lourd: { label: 'Déléguer', hint: 'Urgente et importante, mais énergie ou motivation basse : à confier ou à automatiser.', short: 'Déléguer' },
   planifier: { label: 'Planifier', hint: 'Importante, pas urgente, avec énergie et envie : bloquer un créneau.', short: 'Planifier' },
-  imp_lourd: { label: 'Déléguer', hint: 'Importante, pas urgente, mais énergie ou motivation basse : à confier, automatiser ou découper.', short: 'Déléguer' },
+  imp_lourd: { label: 'Déléguer', hint: 'Importante, pas urgente, mais énergie ou motivation basse : à confier, automatiser ou fractionner.', short: 'Déléguer' },
   expedier: { label: 'Expédier ou planifier', hint: 'Urgente mais peu importante, et facile pour vous : en temps limité.', short: 'Expédier' },
   urg_second: { label: 'Refuser ou renvoyer', hint: 'Urgente mais peu importante, énergie ou motivation basse : refuser, renvoyer à celui qui la demande ou abandonner.', short: 'Refuser' },
   plustard: { label: 'Plus tard', hint: 'Ni urgente ni importante, mais agréable : pour les moments creux.', short: 'Plus tard' },
@@ -156,7 +156,7 @@ export function progressOf(t) {
 }
 const CAT_COLLAB = {
   urg_lourd: { label: 'En parler à son manager', hint: 'Urgente et importante, mais énergie ou motivation basse : en parler à son manager ou à son dirigeant, ou automatiser.', short: 'Manager' },
-  imp_lourd: { label: 'Découper ou demander de l’aide', hint: 'Importante, pas urgente, mais énergie ou motivation basse : découper en petites étapes ou demander de l’aide.', short: 'Découper' },
+  imp_lourd: { label: 'Fractionner ou demander de l’aide', hint: 'Importante, pas urgente, mais énergie ou motivation basse : fractionner en séances ou demander de l’aide.', short: 'Découper' },
   urg_second: { label: 'Valider la nécessité', hint: 'Urgente mais peu importante, énergie ou motivation basse : valider la nécessité avec son manager ou son dirigeant.', short: 'Valider' },
 };
 export const isLeader = () => db.settings.role !== 'collaborateur';
@@ -191,20 +191,27 @@ export const quickWin = (t) => isUrgent(t) && (t.estimate || 60) <= 15 && t.stat
 export const DECISIONS = {
   prioriser: { label: 'Prioriser', icon: 'flame' },
   planifier: { label: 'Planifier', icon: 'calendar' },
-  expedier: { label: 'Expédier (15 min)', icon: 'play' },
+  expedier: { label: 'Expédier vite', icon: 'play' },
   deleguer: { label: 'Déléguer', icon: 'people', leader: true },
   manager: { label: 'En parler à son manager', icon: 'people', collab: true },
-  aide: { label: 'Demander de l’aide', icon: 'people' },
+  aide: { label: 'Demander de l’aide / en parler', icon: 'people' },
   automatiser: { label: 'Automatiser', icon: 'sync' },
-  decouper: { label: 'Découper', icon: 'grid' },
+  decouper: { label: 'Fractionner', icon: 'grid' },
   regrouper: { label: 'Regrouper', icon: 'list' },
   reporter: { label: 'Reporter (date de revue)', icon: 'repeat' },
   negocier: { label: 'Négocier l’échéance', icon: 'link' },
   refuser: { label: 'Refuser ou renvoyer', icon: 'close', leader: true },
   valider: { label: 'Valider la nécessité', icon: 'people', collab: true },
   plustard: { label: 'Plus tard', icon: 'sun' },
-  abandon: { label: 'Abandonner', icon: 'trash' },
+  abandon: { label: 'Abandonner ou refuser', icon: 'trash' },
 };
+/** Les choix proposés à tous (dirigeant comme salarié) : l'application conseille, l'utilisateur décide. */
+export const CHOICES = ['prioriser', 'planifier', 'decouper', 'expedier', 'deleguer', 'aide', 'automatiser', 'reporter', 'negocier', 'plustard', 'abandon'];
+const CHOICE_ALIAS = { manager: 'aide', valider: 'aide', refuser: 'abandon', regrouper: 'expedier' };
+/** Décision affichable (les anciennes décisions sont rattachées au choix équivalent). */
+export const choiceKey = (k) => CHOICE_ALIAS[k] || k;
+/** Conseil principal, parmi les 11 choix. */
+export const adviceKey = (t) => choiceKey(decisionsFor(t)[0]);
 /** Recommandation principale puis alternatives, par situation et selon le profil. */
 export function decisionsFor(t) {
   const leader = isLeader();

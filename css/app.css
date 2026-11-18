@@ -1462,3 +1462,29 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .free-now.short { background: var(--warn-soft); color: var(--warn); }
 .free-now.busy { background: var(--surface-2); color: var(--muted); }
 .now-empty { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+
+/* v3.3 : simplification — décision ouverte, fractionner, case « terminée » partout */
+.chk.sm { width: 18px; height: 18px; border-width: 2px; }
+.chk:hover { border-color: var(--ok); }
+.mx-card-top { display: flex; align-items: flex-start; gap: 6px; }
+.mx-card-top b { flex: 1; min-width: 0; }
+.ev.task .chk, .chip-ev .chk { float: left; margin: 1px 4px 0 0; width: 14px; height: 14px; border-width: 1.5px; }
+.cg-top .chk, .g-name .chk { margin-right: 6px; flex: none; }
+.mini-tasks li { display: flex; align-items: center; gap: 6px; }
+.dc-done { display: inline-flex; align-items: center; gap: 6px; font-size: .86rem; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); }
+.dc-done input { width: auto; min-height: 0; margin: 0; }
+.dc-advice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--cc) 9%, transparent); border-left: 4px solid var(--cc); }
+.dc-sc { font-size: .8rem; color: var(--muted); background: var(--surface); border-radius: 999px; padding: 3px 9px; }
+.dc-sc b { color: var(--text); font-size: 1rem; }
+.dc-adv-txt { flex: 1 1 240px; display: flex; flex-direction: column; gap: 2px; }
+.dc-adv-txt b { color: var(--cc); }
+.dc-adv-txt small { color: var(--muted); }
+.dc-choose { margin: 4px 0 0; font-size: .95rem; }
+.dc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.dc-grid .dc-chip { position: relative; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font: inherit; font-weight: 600; font-size: .88rem; color: var(--text); cursor: pointer; text-align: left; }
+.dc-grid .dc-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+.dc-grid .dc-chip.reco { border: 2px solid var(--accent); background: var(--accent-soft); color: var(--accent); }
+.dc-grid .dc-chip em { position: absolute; top: -8px; right: 8px; font-style: normal; font-size: .64rem; font-weight: 700; text-transform: uppercase; background: var(--accent); color: #fff; padding: 1px 6px; border-radius: 999px; }
+.dc-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+.today-block { border-left: 5px solid var(--accent); }
+.mx-card:focus-visible { outline: 2px solid var(--accent); }

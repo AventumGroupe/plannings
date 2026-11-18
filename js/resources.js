@@ -117,7 +117,7 @@ export function renderResources(el) {
             <div class="progress ${over ? 'over' : ''}"><i style="width:${pct ?? 0}%"></i></div>
             <small class="${over ? 'danger-text' : 'muted'}">${qty.toLocaleString('fr-FR')} ${T.unit} engagé${r.capacity ? ` sur ${Number(r.capacity).toLocaleString('fr-FR')} ${T.unit}` : ''}${over ? ' — dépassement' : ''}</small>` : ''}
           ${type === 'personne' && qty ? `<small class="muted">${qty.toLocaleString('fr-FR')} h affectées</small>` : ''}
-          ${open.length ? `<ul class="mini-tasks">${open.slice(0, 4).map((t) => `<li><button class="link" data-task="${t.id}">${esc(t.title)}</button>${t.delegate === r.id ? ' <small class="muted">(déléguée)</small>' : ''}</li>`).join('')}${open.length > 4 ? `<li class="muted sm">+ ${open.length - 4} autre(s)</li>` : ''}</ul>` : ''}
+          ${open.length ? `<ul class="mini-tasks">${open.slice(0, 4).map((t) => `<li><button class="chk sm ${t.status === 'done' ? 'on' : ''}" data-done-task="${t.id}" title="Terminée" aria-label="Terminée">${t.status === 'done' ? icon('check', 12) : ''}</button><button class="link" data-task="${t.id}">${esc(t.title)}</button>${t.delegate === r.id ? ' <small class="muted">(déléguée)</small>' : ''}</li>`).join('')}${open.length > 4 ? `<li class="muted sm">+ ${open.length - 4} autre(s)</li>` : ''}</ul>` : ''}
         </li>`;
       }).join('')}</ul>` : `<p class="muted sm">—</p>`}
     </section>`;
