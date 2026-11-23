@@ -1488,3 +1488,4 @@ body[data-view="matrice"] .view { max-width: 1280px; }
 .dc-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
 .today-block { border-left: 5px solid var(--accent); }
 .mx-card:focus-visible { outline: 2px solid var(--accent); }
+.cl-props { border-left: 5px solid #7a5fd1; }

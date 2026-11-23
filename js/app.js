@@ -9,6 +9,7 @@ import { renderDecision, toDecideCount } from './decision.js';
 import { rhSync, rhConfigured, rhInfo, rhLink, setRhLink, parseLink } from './rh.js';
 import { resumeFocus } from './focus.js';
 import { teamSync, onTeam, teamOnline, team } from './team.js';
+import { fetchProps } from './claudeprops.js';
 import { renderCalendar, calendarRoute, setCalendarHooks } from './calendar.js';
 import { renderGantt } from './gantt.js';
 import { renderResources } from './resources.js';
@@ -22,7 +23,7 @@ INFO.sources = sourcesHtml();
 INFO.rythme = 'Plombante : séances courtes (25 min par défaut) avec 5 min de pause, 2 à 3 d’affilée au plus. Stimulante ou dynamisante : séances de 50 min, prolongeables jusqu’à 90 min si l’on est bien lancé. Au-delà d’environ 4 h de travail concentré par jour, l’attention chute.';
 import { $, esc, icon, debounce, download, toLocal, toDateStr, addDays, startOfDay, fmt } from './util.js';
 
-const VERSION = '3.3.0';
+const VERSION = '3.4.0';
 const TABS = [
   { id: 'journee', label: 'Journée', icon: 'today', render: renderToday, main: true },
   { id: 'decision', label: 'Décision', icon: 'bulb', render: renderDecision, main: true },
@@ -486,6 +487,10 @@ async function start() {
 
   // Synchronisation provisoire entre appareils (dépôt GitHub privé)
   if (ghConfigured()) ghSync();
+  // Propositions des recherches planifiées de Claude (dépôt de données)
+  fetchProps(true).then((ok) => { if (ok) rerender(); });
+  setInterval(() => { if (!document.hidden) fetchProps().then((ok) => { if (ok) rerender(); }); }, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchProps().then((ok) => { if (ok) rerender(); }); });
   setInterval(() => { if (ghConfigured() && !document.hidden) ghSync(); }, 2 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && ghConfigured()) ghSync(); });
   window.addEventListener('online', () => { if (ghConfigured()) ghSync(); });

@@ -180,3 +180,29 @@ test('case « terminée » : depuis la Décision et la Matrice ; plus jamais rep
   const r = await run(page, ({ store }) => store.tasks().map((t) => t.status));
   expect(r).toEqual(['done', 'done']);
 });
+
+test('propositions de Claude : accepter, refuser, modifier ; jamais reproposées', async ({ page }) => {
+  const props = { items: [
+    { id: 'p1', titre: 'Préparer la réunion OPCO de demain', source: 'Journée à venir', raison: 'Rendez-vous demain à 10 h sans document préparé.', echeance: '2026-11-11', estimation_min: 30, urgence: 4, importance: 4, energie: 3 },
+    { id: 'p2', titre: 'Répondre au devis Durand', source: 'Journée passée', raison: 'Mail reçu hier, sans réponse.' },
+    { id: 'p3', titre: 'Relancer le formateur', source: 'Journée passée' },
+  ] };
+  const b64 = Buffer.from(JSON.stringify(props)).toString('base64');
+  await page.route('https://api.github.com/**', (r) => r.request().url().includes('propositions.json')
+    ? r.fulfill({ json: { content: b64 } }) : r.fulfill({ status: 404, json: { message: 'Not Found' } }));
+  await openApp(page);
+  await run(page, async () => {
+    const s = await import('./js/store.js'); s.local.set('ghToken', 'jeton-test'); s.local.set('ghRepo', 'AventumGroupe/plannings-donnees');
+    const c = await import('./js/claudeprops.js'); await c.fetchProps(true);
+  });
+  await page.goto('/#journee');
+  await expect(page.locator('.cl-props .sh-in')).toHaveCount(3);
+  await page.click('[data-cp="ok"][data-cp-id="p1"]');
+  await page.click('[data-cp="no"][data-cp-id="p2"]');
+  await page.click('[data-cp="edit"][data-cp-id="p3"]');
+  await page.locator('.sheet [data-f="title"]').fill('Relancer le formateur Martin');
+  await page.click('.sheet [data-act="save"]');
+  await expect(page.locator('.cl-props')).toHaveCount(0);
+  const r = await run(page, ({ store }) => ({ titles: store.tasks().map((t) => t.title).sort(), refused: !!store.db.deleted['cl-p2'], needs: store.tasks().every(store.needsDecision) }));
+  expect(r).toEqual({ titles: ['Préparer la réunion OPCO de demain', 'Relancer le formateur Martin'], refused: true, needs: true });
+});
