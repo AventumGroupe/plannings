@@ -593,7 +593,9 @@ async function syncChecklist(t, url, stats) {
 
 // ---------- Agenda Outlook (tâches avec heure) ----------
 const calBase = () => (calendarId() ? `/me/calendars/${calendarId()}` : '/me/calendar');
-const SELECT = 'id,subject,start,end,isAllDay,lastModifiedDateTime,showAs,location,isCancelled,webLink,categories';
+const SELECT = 'id,subject,start,end,isAllDay,lastModifiedDateTime,showAs,location,isCancelled,webLink,categories,bodyPreview';
+/** Entrées d'agenda déposées par les recherches planifiées de Claude : propositions de tâches, pas des rendez-vous. */
+export const PROP_PREFIX = '[Proposition Plannings]';
 const EXPAND = `singleValueExtendedProperties($filter=id eq '${PROP}' or id eq '${PROP_DATA}')`;
 const PREFER = { Prefer: `outlook.timezone="${TZ}"` };
 const localStr = (dt) => dt.slice(0, 16);
@@ -602,10 +604,11 @@ const prop = (ev, id) => ev.singleValueExtendedProperties?.find((p) => p.id.toLo
 async function readEvents(from, to) {
   const url = `${calBase()}/calendarView?startDateTime=${from.toISOString()}&endDateTime=${to.toISOString()}&$top=250&$select=${SELECT}&$expand=${encodeURIComponent(EXPAND)}`;
   const list = await pages(url, PREFER);
-  const ours = [], external = [];
+  const ours = [], external = [], proposals = [];
   for (const ev of list) {
     if (ev.isCancelled) continue;
     const id = prop(ev, PROP);
+    if ((ev.subject || '').startsWith(PROP_PREFIX)) { proposals.push(proposalOf(ev)); continue; }
     if (id) {
       let data = null;
       try { data = JSON.parse(prop(ev, PROP_DATA) || 'null'); } catch {}
@@ -617,7 +620,34 @@ async function readEvents(from, to) {
       });
     }
   }
+  // Propositions déjà traitées sur un autre appareil (acceptées ou refusées) : on retire l'entrée d'agenda
+  const pending = [];
+  for (const p of proposals) {
+    if (db.tasks['cl-' + p.id] || db.deleted['cl-' + p.id]) await ignore404(graph(`/me/events/${p.eventId}`, { method: 'DELETE' })).catch(() => {});
+    else pending.push(p);
+  }
+  local.set('msProps', pending);
   return { ours, external };
+}
+
+/** Proposition lue dans l'agenda : titre après le préfixe ; 1re ligne du corps = critères en JSON. */
+function proposalOf(ev) {
+  const txt = String(ev.bodyPreview || '');
+  let meta = {};
+  const m = txt.match(/\{[^{}]*\}/);
+  if (m) { try { meta = JSON.parse(m[0]); } catch { /* */ } }
+  const raison = txt.replace(m ? m[0] : '', '').replace(/^\s*(Pourquoi\s*:\s*)?/i, '').trim();
+  let h = 5381; for (let i = 0; i < ev.id.length; i++) h = ((h * 33) ^ ev.id.charCodeAt(i)) >>> 0;
+  return {
+    id: 'ms' + h.toString(36), eventId: ev.id, titre: ev.subject.slice(PROP_PREFIX.length).trim() || 'Proposition',
+    raison: raison.slice(0, 300), source: meta.src || (localStr(ev.start.dateTime) ? 'Agenda' : ''), echeance: meta.due || null,
+    estimation_min: meta.min || null, urgence: meta.u || null, importance: meta.i || null, energie: meta.e || null,
+  };
+}
+/** Retire de l'agenda l'entrée d'une proposition traitée (acceptée ou refusée). */
+export async function removeProposalEvent(eventId) {
+  if (!account || !eventId) return false;
+  try { await ignore404(graph(`/me/events/${eventId}`, { method: 'DELETE' })); return true; } catch (e) { console.warn(e); return false; }
 }
 
 function eventPayload(t) {
