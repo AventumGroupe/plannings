@@ -170,7 +170,7 @@ export function renderDecision(el) {
 
 function bind(el, t) {
   const root = el.querySelector('.dc-view');
-  const rerender = () => renderDecision(el);
+  const rerender = () => { if (document.body.dataset.view === 'decision' && el.isConnected) renderDecision(el); };
   bindSliders(root, (name, v, final) => {
     if (!final) return;
     if (['urgency', 'importance', 'energy', 'motivation'].includes(name)) { t[name] = v; putTask(t, { silent: true }); save('decision-crit'); pick = null; rerender(); }
