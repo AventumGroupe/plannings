@@ -3,9 +3,19 @@
 Application de planification (urgence, importance, énergie) : liste, matrice, calendrier, Gantt, ressources.
 Synchronisation avec Microsoft 365 (agenda Outlook, Microsoft To Do, mails marqués d'un drapeau).
 
-Fonctions principales : « Ma journée » (énergie du moment, tâche conseillée, proposition de journée),
-minuteur de concentration ludique, délégation suivie (retour attendu, relances), revue de la semaine,
-modèles de projets (rétroplanning), sous-tâches avec temps passé, PERT, notifications Android natives.
+Onglets : **Journée** (énergie du moment, tâche conseillée qui tient dans le temps libre avant le prochain
+rendez-vous, tâches du jour à arbitrer, propositions de Claude), **Décision** (scores Eisenhower U×I et
+énergie × motivation, conseil ; 11 décisions ouvertes à tous, dont « Fractionner » en séances espacées),
+**Liste** (tableau par décision), **Matrice**, **Calendrier 360°**, **Gantt / PERT**, **Ressources / Équipe**, **Réglages**.
+
+Aussi : case « terminée » partout, délégation suivie et tâches confiées en ligne (plateforme RH), modèles de
+projets, minuteur de concentration, revue du lundi, journal des renoncements, absences RH, assistant Claude,
+notifications Android natives, mails marqués d'un drapeau (seulement ceux qui appellent une réponse).
+
+**Propositions de Claude** : le « Brief du matin » (recherche planifiée sur claude.ai, connecteur Microsoft 365)
+dépose dans l'agenda Outlook des entrées « [Proposition Plannings] … » (7 h, 5 min, disponible ; 1re ligne du
+corps = critères en JSON, puis « Pourquoi : … »). Plannings les affiche dans « Claude vous propose » ; acceptées,
+modifiées ou refusées, elles sont retirées d'Outlook. (Un fichier `propositions.json` du dépôt de données est aussi lu.)
 
 - **Version web** (GitHub Pages) : https://aventumgroupe.github.io/plannings/
 - **Application Android** (dernière version) : https://github.com/AventumGroupe/plannings/releases/latest/download/gestion-plannings.apk
